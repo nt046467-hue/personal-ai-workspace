@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: myspace-ai
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: STORAGE_DIR
+        value: /var/data/storage
+      - key: AI_PROVIDER
+        value: local
+    disk:
+      name: myspace-storage
+      mountPath: /var/data/storage
+      sizeGB: 5

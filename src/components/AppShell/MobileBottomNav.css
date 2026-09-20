@@ -1,0 +1,71 @@
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(60px + env(safe-area-inset-bottom, 0px));
+  background-color: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-around;
+  padding: 6px var(--space-2) env(safe-area-inset-bottom, 0px) var(--space-2);
+  z-index: 50;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.mobile-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 1;
+  height: 48px;
+  min-height: 44px;
+  color: var(--text-muted);
+  transition: color var(--duration-fast) ease;
+}
+
+.mobile-nav-btn.active {
+  color: var(--text-primary);
+}
+
+.mobile-nav-btn.active .nav-icon {
+  color: var(--accent-primary);
+}
+
+.nav-label {
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
+}
+
+/* Center Add Button */
+.mobile-nav-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.add-btn-inner {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) ease, background-color var(--duration-fast) ease;
+}
+
+.mobile-nav-add-btn:active .add-btn-inner {
+  transform: scale(0.92);
+  background-color: var(--accent-primary-hover);
+}

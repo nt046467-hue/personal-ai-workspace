@@ -1,0 +1,246 @@
+.auth-modal-card {
+  position: relative;
+  width: 92%;
+  max-width: 440px;
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  padding: 32px 28px;
+  box-shadow: var(--shadow-modal);
+  animation: modalScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1000;
+  box-sizing: border-box;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.auth-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-md);
+  transition: all var(--trans-fast);
+}
+
+.auth-modal-close:hover {
+  color: var(--text-primary);
+  background-color: var(--surface-secondary);
+}
+
+.auth-modal-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-brand-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.auth-brand-glyph .myspace-logo-full {
+  max-width: 180px;
+  height: auto;
+}
+
+.auth-modal-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.auth-modal-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.demo-login-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: var(--surface-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.demo-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.demo-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.demo-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.auth-divider span {
+  padding: 0 10px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.auth-input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-modal-card .auth-input-wrap input,
+.auth-input-wrap input {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-right: 14px;
+  padding-left: 42px !important;
+  background-color: var(--surface-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: border-color var(--trans-fast), box-shadow var(--trans-fast);
+}
+
+.auth-modal-card .auth-input-wrap input:focus,
+.auth-input-wrap input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.auth-submit-btn {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  margin-top: 8px;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.auth-footer-toggle {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.auth-link-btn {
+  background: none;
+  border: none;
+  color: var(--accent-cyan);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.auth-link-btn:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .auth-modal-card {
+    width: calc(100% - 24px);
+    margin: 12px auto;
+    padding: 24px 16px;
+    max-height: calc(100vh - 24px);
+  }
+
+  .auth-modal-title {
+    font-size: 17px;
+  }
+
+  .auth-modal-sub {
+    font-size: 12px;
+  }
+
+  .demo-login-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .demo-login-strip .btn {
+    width: 100%;
+    justify-content: center;
+    height: 40px;
+  }
+
+  .demo-desc {
+    white-space: normal;
+  }
+}
+
+@keyframes modalScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

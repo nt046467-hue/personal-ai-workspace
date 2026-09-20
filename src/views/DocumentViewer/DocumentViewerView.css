@@ -1,0 +1,406 @@
+.doc-viewer-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  background-color: var(--bg-app);
+  overflow: hidden;
+  position: relative;
+}
+
+.doc-viewer-topbar {
+  height: 54px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  flex-shrink: 0;
+}
+
+.doc-top-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+}
+
+.doc-top-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.doc-top-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-top-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.doc-top-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Split Layout */
+.doc-viewer-split-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.doc-preview-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-4);
+  display: flex;
+  justify-content: center;
+  background-color: var(--bg-app);
+}
+
+.doc-page-canvas {
+  width: 100%;
+  max-width: 720px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-sm);
+}
+
+.doc-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-6);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+
+.doc-page-badge {
+  font-family: var(--font-mono);
+  background-color: var(--bg-surface-active);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+}
+
+.doc-spec-heading {
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.doc-spec-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--space-6);
+}
+
+.doc-spec-section {
+  margin-bottom: var(--space-6);
+}
+
+.doc-spec-section h3 {
+  font-size: var(--text-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.doc-spec-section p {
+  font-size: var(--text-sm);
+  line-height: var(--lh-relaxed);
+  margin-bottom: var(--space-3);
+}
+
+.doc-spec-section ul {
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+}
+
+.doc-callout-box {
+  background-color: var(--bg-surface-elevated);
+  border-left: 3px solid var(--accent-primary);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  margin-top: var(--space-2);
+}
+
+/* Right Pane: Desktop AI Assistant */
+.doc-ai-pane {
+  width: 380px;
+  border-left: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.doc-ai-header {
+  height: 48px;
+  padding: 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ai-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.doc-ai-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.doc-ai-prompts-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-app);
+}
+
+.doc-prompt-chip {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) ease;
+}
+
+.doc-prompt-chip:hover {
+  background-color: var(--bg-surface-active);
+  color: var(--text-primary);
+}
+
+.doc-ai-messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.doc-msg-bubble {
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-xs);
+  line-height: var(--lh-normal);
+  max-width: 92%;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-msg-bubble.msg-user {
+  align-self: flex-end;
+  background-color: var(--accent-primary);
+  color: #ffffff;
+}
+.doc-msg-bubble.msg-user p {
+  color: #ffffff;
+}
+
+.doc-msg-bubble.msg-assistant {
+  align-self: flex-start;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.msg-timestamp {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  align-self: flex-end;
+}
+
+.doc-ai-composer {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  gap: var(--space-2);
+  background-color: var(--bg-surface);
+}
+
+.doc-ai-input {
+  flex: 1;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.doc-ai-send-btn {
+  width: 36px;
+  height: 36px;
+  background-color: var(--accent-primary);
+  color: #ffffff;
+  border-radius: var(--radius-md);
+}
+
+.doc-ai-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Mobile-only elements */
+.mobile-floating-ai-trigger {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .doc-viewer-wrapper {
+    height: calc(100vh - 50px);
+  }
+
+  .hide-mobile {
+    display: none;
+  }
+
+  .desktop-only-pane {
+    display: none; /* Crucial: no dual pane squish on mobile! */
+  }
+
+  .doc-preview-pane {
+    padding: var(--space-3);
+    padding-bottom: 90px;
+  }
+
+  .doc-page-canvas {
+    padding: var(--space-4);
+  }
+
+  .mobile-floating-ai-trigger {
+    display: block;
+    position: fixed;
+    bottom: 24px;
+    right: 20px;
+    z-index: 60;
+  }
+
+  .mobile-ai-fab-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 44px;
+    padding: 0 var(--space-4);
+    background-color: var(--accent-primary);
+    color: #ffffff;
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-lg);
+    font-size: var(--text-sm);
+    font-weight: var(--fw-semibold);
+  }
+
+  /* Mobile full-screen slide-up AI sheet */
+  .mobile-ai-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: flex-end;
+  }
+
+  .mobile-ai-sheet-modal {
+    width: 100%;
+    height: 85vh;
+    background-color: var(--bg-surface-elevated);
+    border-top-left-radius: var(--radius-2xl);
+    border-top-right-radius: var(--radius-2xl);
+    display: flex;
+    flex-direction: column;
+    animation: slideUp var(--duration-normal) var(--ease-standard);
+  }
+
+  .mobile-sheet-ai-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .sheet-heading {
+    font-size: var(--text-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 250px;
+  }
+
+  .mobile-prompts {
+    flex-direction: row;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .mobile-ai-messages-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .mobile-ai-sticky-composer {
+    padding: var(--space-3);
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0));
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    gap: var(--space-2);
+    background-color: var(--bg-surface);
+  }
+
+  .mobile-composer-input {
+    flex: 1;
+    height: 42px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+
+  .mobile-composer-send {
+    width: 42px;
+    height: 42px;
+    background-color: var(--accent-primary);
+    color: #ffffff;
+    border-radius: var(--radius-md);
+  }
+}
