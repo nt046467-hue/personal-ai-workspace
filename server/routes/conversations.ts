@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { validateBody } from '../middleware/validate';
+import { createConversationSchema } from '../validation/schemas';
 
 const router = Router();
 router.use(requireAuth);
@@ -20,7 +22,7 @@ router.get('/', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 // POST /api/conversations
-router.post('/', (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(createConversationSchema), (req: AuthenticatedRequest, res: Response): void => {
   const { title } = req.body;
   const db = getDatabase();
   const id = `conv-${crypto.randomBytes(6).toString('hex')}`;

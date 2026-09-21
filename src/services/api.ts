@@ -12,26 +12,30 @@ export interface UserSession {
   workspaceName: string;
   theme?: string;
   timezone?: string;
+  csrfToken?: string;
 }
 
 class ApiService {
-  private token: string | null = null;
+  // CSRF token stored in memory only — read from cookie/response, never localStorage
+  private csrfToken: string | null = null;
 
   constructor() {
-    this.token = localStorage.getItem('myspace_token');
+    // Read CSRF token from cookie if present (non-httpOnly cookie set by server)
+    this.csrfToken = this.readCsrfCookie();
   }
 
-  public setToken(token: string | null) {
-    this.token = token;
-    if (token) {
-      localStorage.setItem('myspace_token', token);
-    } else {
-      localStorage.removeItem('myspace_token');
-    }
+  private readCsrfCookie(): string | null {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(/(?:^|;\s*)myspace_csrf=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
   }
 
-  public getToken(): string | null {
-    return this.token;
+  public setCsrfToken(token: string | null) {
+    this.csrfToken = token;
+  }
+
+  public getCsrfToken(): string | null {
+    return this.csrfToken || this.readCsrfCookie();
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -39,18 +43,30 @@ class ApiService {
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // Attach CSRF token on state-changing requests
+    const method = (options.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      const csrf = this.getCsrfToken();
+      if (csrf) {
+        headers['X-CSRF-Token'] = csrf;
+      }
     }
 
     const res = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers,
+      credentials: 'include', // Always send HttpOnly session cookie
     });
+
+    if (res.status === 401) {
+      // Session expired or revoked — trigger re-authentication
+      window.dispatchEvent(new CustomEvent('myspace:session-expired'));
+      throw new Error('Session expired. Please log in again.');
+    }
 
     const json = await res.json();
     if (!res.ok || !json.success) {
@@ -61,33 +77,37 @@ class ApiService {
   }
 
   // --- Auth APIs ---
-  public async login(email: string, password: string): Promise<{ token: string; user: UserSession }> {
-    const data = await this.request<{ token: string; user: UserSession }>('/auth/login', {
+  public async login(email: string, password: string): Promise<{ user: UserSession }> {
+    const data = await this.request<{ token: string; csrfToken: string; user: UserSession }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    this.setToken(data.token);
-    return data;
+    if (data.csrfToken) this.setCsrfToken(data.csrfToken);
+    return { user: { ...data.user, csrfToken: data.csrfToken } };
   }
 
-  public async signup(email: string, password: string, name: string): Promise<{ token: string; user: UserSession }> {
-    const data = await this.request<{ token: string; user: UserSession }>('/auth/signup', {
+  public async signup(email: string, password: string, name: string): Promise<{ user: UserSession }> {
+    const data = await this.request<{ token: string; csrfToken: string; user: UserSession }>('/auth/signup', {
       method: 'POST',
       body: JSON.stringify({ email, password, name }),
     });
-    this.setToken(data.token);
-    return data;
+    if (data.csrfToken) this.setCsrfToken(data.csrfToken);
+    return { user: { ...data.user, csrfToken: data.csrfToken } };
   }
 
   public async getMe(): Promise<UserSession> {
-    return this.request<UserSession>('/auth/me');
+    const data = await this.request<UserSession & { csrfToken?: string }>('/auth/me');
+    if (data.csrfToken) this.setCsrfToken(data.csrfToken);
+    return data;
   }
 
   public async logout(): Promise<void> {
     try {
       await this.request('/auth/logout', { method: 'POST' });
     } finally {
-      this.setToken(null);
+      this.setCsrfToken(null);
+      // Clear CSRF cookie client-side
+      document.cookie = 'myspace_csrf=; Max-Age=0; path=/';
     }
   }
 
@@ -193,7 +213,8 @@ class ApiService {
   }
 
   /**
-   * Stream AI Chat using Server-Sent Events
+   * Stream AI Chat using Server-Sent Events.
+   * Uses cookie-based auth; no Bearer token in header.
    */
   public async streamAIChat(
     message: string,
@@ -202,16 +223,25 @@ class ApiService {
       onToken?: (token: string) => void;
       onDone?: (result: { content: string; sources: any[]; actions: any[] }) => void;
       onError?: (err: string) => void;
-    }
+    },
+    signal?: AbortSignal
   ): Promise<{ content: string; sources: any[]; actions: any[] }> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const csrf = this.getCsrfToken();
+    if (csrf) headers['X-CSRF-Token'] = csrf;
+
     const response = await fetch(`${API_BASE}/ai/chat/stream`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.token ? `Bearer ${this.token}` : '',
-      },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({ message, conversationId }),
+      signal,
     });
+
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent('myspace:session-expired'));
+      throw new Error('Session expired. Please log in again.');
+    }
 
     if (!response.ok) {
       throw new Error(`AI Streaming request failed with status ${response.status}`);
@@ -237,6 +267,7 @@ class ApiService {
 
           for (const line of lines) {
             const clean = line.trim();
+            if (clean.startsWith(':')) continue; // heartbeat comment line
             if (clean.startsWith('data: ')) {
               try {
                 const payload = JSON.parse(clean.slice(6));
@@ -251,7 +282,7 @@ class ApiService {
                 } else if (payload.type === 'error') {
                   callbacks?.onError?.(payload.message);
                 }
-              } catch {}
+              } catch { /* skip malformed SSE */ }
             }
           }
         }

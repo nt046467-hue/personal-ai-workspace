@@ -9,7 +9,7 @@ export function createRateLimiter(options: { windowMs: number; max: number; mess
   const hits = new Map<string, RateLimitRecord>();
 
   // Cleanup old entries every 5 minutes
-  setInterval(() => {
+  const timer = setInterval(() => {
     const now = Date.now();
     for (const [key, record] of hits.entries()) {
       if (now > record.resetTime) {
@@ -17,6 +17,7 @@ export function createRateLimiter(options: { windowMs: number; max: number; mess
       }
     }
   }, 5 * 60 * 1000);
+  if (timer.unref) timer.unref();
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const key = (req as any).user?.userId || req.ip || 'anonymous';

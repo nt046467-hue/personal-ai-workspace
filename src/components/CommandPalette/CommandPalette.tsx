@@ -12,6 +12,8 @@ import {
   Bookmark
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { HighlightText } from '../HighlightText/HighlightText';
+import { openSafeExternalUrl } from '../../utils/security';
 import type { NavigationTab } from '../AppShell/DesktopSidebar';
 import './CommandPalette.css';
 
@@ -208,8 +210,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         >
                           <FileText size={16} className="item-icon" />
                           <div className="item-content">
-                            <span className="item-title">{item.title}</span>
-                            <span className="item-subtitle">{item.excerpt}</span>
+                            <span className="item-title">
+                              <HighlightText text={item.title} query={query} />
+                            </span>
+                            <span className="item-subtitle">
+                              <HighlightText text={item.excerpt} query={query} />
+                            </span>
                           </div>
                           <span className="item-badge">{item.type}</span>
                         </div>
@@ -228,8 +234,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         >
                           <CheckSquare size={16} className="item-icon" />
                           <div className="item-content">
-                            <span className="item-title">{t.title}</span>
-                            <span className="item-subtitle">{t.excerpt}</span>
+                            <span className="item-title">
+                              <HighlightText text={t.title} query={query} />
+                            </span>
+                            <span className="item-subtitle">
+                              <HighlightText text={t.excerpt} query={query} />
+                            </span>
                           </div>
                           <span className="badge badge-default">
                             {t.metadata?.priority || 'task'}
@@ -250,8 +260,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         >
                           <FolderKanban size={16} className="item-icon" />
                           <div className="item-content">
-                            <span className="item-title">{p.title}</span>
-                            <span className="item-subtitle">{p.excerpt}</span>
+                            <span className="item-title">
+                              <HighlightText text={p.title} query={query} />
+                            </span>
+                            <span className="item-subtitle">
+                              <HighlightText text={p.excerpt} query={query} />
+                            </span>
                           </div>
                           <span className="item-badge">{p.metadata?.progress || 0}%</span>
                         </div>
@@ -266,12 +280,19 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         <div 
                           key={b.id} 
                           className="command-item"
-                          onClick={() => { window.open(b.metadata?.url || b.title, '_blank'); onClose(); }}
+                          onClick={() => {
+                            openSafeExternalUrl(b.metadata?.url || b.title);
+                            onClose();
+                          }}
                         >
                           <Bookmark size={16} className="item-icon" />
                           <div className="item-content">
-                            <span className="item-title">{b.title}</span>
-                            <span className="item-subtitle">{b.excerpt}</span>
+                            <span className="item-title">
+                              <HighlightText text={b.title} query={query} />
+                            </span>
+                            <span className="item-subtitle">
+                              <HighlightText text={b.excerpt} query={query} />
+                            </span>
                           </div>
                           <span className="item-badge">Link</span>
                         </div>

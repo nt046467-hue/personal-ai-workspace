@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { validateBody } from '../middleware/validate';
+import { createKnowledgeSchema, updateKnowledgeSchema } from '../validation/schemas';
 
 const router = Router();
 router.use(requireAuth);
@@ -88,15 +90,8 @@ router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 // POST /api/knowledge
-router.post('/', (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(createKnowledgeSchema), (req: AuthenticatedRequest, res: Response): void => {
   const { title, content, type = 'note', tags = [] } = req.body;
-  if (!title) {
-    res.status(400).json({
-      success: false,
-      error: { code: 'VALIDATION_ERROR', message: 'Title is required.' },
-    });
-    return;
-  }
 
   const db = getDatabase();
   const id = `k-${crypto.randomBytes(6).toString('hex')}`;
@@ -136,7 +131,7 @@ router.post('/', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 // PUT /api/knowledge/:id (Autosave & update)
-router.put('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.put('/:id', validateBody(updateKnowledgeSchema), (req: AuthenticatedRequest, res: Response): void => {
   const { title, content, tags, pinned } = req.body;
   const db = getDatabase();
 

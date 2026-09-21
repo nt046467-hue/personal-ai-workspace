@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Markdown } from '../../components/Markdown';
 import { 
   Send, 
   Paperclip, 
   ArrowRight, 
+  ArrowDown,
+  Square,
   FileText, 
   ExternalLink,
   Bot,
@@ -22,6 +25,9 @@ interface AIAssistantViewProps {
   onOpenDoc: (id: string) => void;
   onOpenProject: (id: string) => void;
   onAttachFile?: (file: File) => void;
+  isStreaming?: boolean;
+  onStopStreaming?: () => void;
+  onComposerFocusChange?: (focused: boolean) => void;
 }
 
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
@@ -32,8 +38,12 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   onOpenDoc,
   onOpenProject,
   onAttachFile,
+  isStreaming = false,
+  onStopStreaming,
+  onComposerFocusChange,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -41,40 +51,31 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   const composerRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
 
-  // Track user scroll position so manual upward scrolling is preserved
+  // Track user scroll position: if scrolled up > 200px show "Jump to latest" pill
   const handleScroll = () => {
     const el = scrollAreaRef.current;
     if (!el) return;
-    const threshold = 140;
-    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distanceFromBottom <= 140;
+    setShowJumpToLatest(distanceFromBottom > 200);
   };
 
-  // Auto-scroll to bottom of conversation on new messages only if user was already near the bottom
+  const handleJumpToLatest = () => {
+    const el = scrollAreaRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      isNearBottomRef.current = true;
+      setShowJumpToLatest(false);
+    }
+  };
+
+  // Auto-scroll to bottom on new messages — instant scroll prevents F-02 lag
   useEffect(() => {
     const el = scrollAreaRef.current;
     if (el && isNearBottomRef.current) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
-
-  // Dynamically measure composer height so message scroll area always has exact required clearance
-  useEffect(() => {
-    const el = composerRef.current;
-    if (!el) return;
-    const updateHeight = () => {
-      const h = el.offsetHeight;
-      if (h > 0) {
-        document.documentElement.style.setProperty('--mobile-composer-height', `${h}px`);
-      }
-    };
-    updateHeight();
-    const ro = new ResizeObserver(updateHeight);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      document.documentElement.style.removeProperty('--mobile-composer-height');
-    };
-  }, []);
 
   // Smooth textarea height: compact single/two-line when empty or short, grows smoothly up to 110px
   useEffect(() => {
@@ -92,47 +93,21 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
     el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }, [inputText]);
 
-  // Handle on-screen keyboard via visualViewport on mobile
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
-    const vv = window.visualViewport;
-    const updateViewport = () => {
-      const keyboardOffset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      if (keyboardOffset > 50) {
-        document.documentElement.style.setProperty('--mobile-composer-bottom', `${keyboardOffset + 4}px`);
-        document.documentElement.style.setProperty('--mobile-keyboard-open', '1');
-        const el = scrollAreaRef.current;
-        if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-      } else {
-        document.documentElement.style.removeProperty('--mobile-composer-bottom');
-        document.documentElement.style.removeProperty('--mobile-keyboard-open');
-      }
-    };
-    vv.addEventListener('resize', updateViewport);
-    vv.addEventListener('scroll', updateViewport);
-    return () => {
-      vv.removeEventListener('resize', updateViewport);
-      vv.removeEventListener('scroll', updateViewport);
-      document.documentElement.style.removeProperty('--mobile-composer-bottom');
-      document.documentElement.style.removeProperty('--mobile-keyboard-open');
-    };
-  }, []);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isStreaming) return;
     onSendMessage(inputText);
     setInputText('');
     isNearBottomRef.current = true;
+    setShowJumpToLatest(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = '';
       textareaRef.current.style.overflowY = 'hidden';
     }
-    setTimeout(() => {
-      if (scrollAreaRef.current) {
-        scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
-      }
-    }, 100);
+    // Instant scroll — avoids F-02 where content grows faster than smooth animation
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -148,10 +123,15 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
 
   const handleFocus = () => {
     isNearBottomRef.current = true;
+    onComposerFocusChange?.(true);
     setTimeout(() => {
       const el = scrollAreaRef.current;
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      if (el) el.scrollTop = el.scrollHeight;
     }, 200);
+  };
+
+  const handleBlur = () => {
+    onComposerFocusChange?.(false);
   };
 
   const handleActionClick = (action: string, targetId?: string) => {
@@ -212,18 +192,9 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
                 )}
                 
                 <div className="ai-bubble-body">
-                  <div 
-                    className="ai-bubble-markdown"
-                    dangerouslySetInnerHTML={{ 
-                      __html: (msg.content || '')
-                        .replace(/### (.*?)\n/g, '<h3>$1</h3>')
-                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                        .replace(/`([^`]+)`/g, '<code>$1</code>')
-                        .replace(/\n\n/g, '<br/><br/>')
-                        .replace(/\n/g, '<br/>')
-                    }}
-                  />
+                  <div className="ai-bubble-markdown">
+                    <Markdown content={msg.content || ''} />
+                  </div>
 
                   {/* Sources Section */}
                   {msg.sources && msg.sources.length > 0 && (
@@ -275,7 +246,20 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
         </div>
       </div>
 
-      {/* Sticky Bottom Composer */}
+      {/* Floating Jump to Latest Pill */}
+      {showJumpToLatest && (
+        <button
+          type="button"
+          className="ai-jump-latest-btn"
+          onClick={handleJumpToLatest}
+          aria-label="Jump to latest messages"
+        >
+          <ArrowDown size={14} />
+          <span>Jump to latest</span>
+        </button>
+      )}
+
+      {/* Normal flow bottom composer */}
       <div className="ai-composer-dock" ref={composerRef}>
         {/* Hidden file input — triggered by paperclip button */}
         <input
@@ -300,8 +284,8 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             title="Attach file (PDF, DOCX, TXT, MD…)"
             aria-label="Attach file"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!onAttachFile}
-            style={{ opacity: onAttachFile ? 1 : 0.4, cursor: onAttachFile ? 'pointer' : 'not-allowed' }}
+            disabled={!onAttachFile || isStreaming}
+            style={{ opacity: onAttachFile && !isStreaming ? 1 : 0.4, cursor: onAttachFile && !isStreaming ? 'pointer' : 'not-allowed' }}
           >
             <Paperclip size={18} />
           </button>
@@ -310,21 +294,36 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             ref={textareaRef}
             rows={1}
             className="ai-composer-input"
-            placeholder="Ask about your workspace, notes, or tasks..."
+            placeholder="Ask your workspace…"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={handleFocus}
+            onBlur={handleBlur}
+            aria-label="Ask your workspace"
+            disabled={isStreaming}
           />
 
-          <button 
-            type="submit" 
-            className="ai-send-btn btn-primary"
-            disabled={!inputText.trim()}
-            aria-label="Send message"
-          >
-            <Send size={15} />
-          </button>
+          {isStreaming ? (
+            <button 
+              type="button" 
+              className="ai-stop-btn"
+              onClick={onStopStreaming}
+              aria-label="Stop generating"
+              title="Stop generating"
+            >
+              <Square size={14} fill="currentColor" />
+            </button>
+          ) : (
+            <button 
+              type="submit" 
+              className="ai-send-btn btn-primary"
+              disabled={!inputText.trim()}
+              aria-label="Send message"
+            >
+              <Send size={15} />
+            </button>
+          )}
         </form>
       </div>
     </div>

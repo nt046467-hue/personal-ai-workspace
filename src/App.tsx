@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DesktopSidebar } from './components/AppShell/DesktopSidebar';
 import type { NavigationTab } from './components/AppShell/DesktopSidebar';
 import { DesktopTopBar } from './components/AppShell/DesktopTopBar';
@@ -22,14 +22,9 @@ import { TasksView } from './views/Tasks/TasksView';
 import { ProjectsView } from './views/Projects/ProjectsView';
 import { SettingsView } from './views/Settings/SettingsView';
 
-import { 
-  INITIAL_TASKS, 
-  INITIAL_KNOWLEDGE, 
-  INITIAL_PROJECTS, 
-  INITIAL_ACTIVITIES, 
-  INITIAL_AI_MESSAGES,
-  CURRENT_USER
-} from './data/mockData';
+import { useMediaQuery } from './hooks/useMediaQuery';
+import { useVisualViewportHeight } from './hooks/useVisualViewportHeight';
+
 import type { 
   Task, 
   KnowledgeItem, 
@@ -43,6 +38,10 @@ import type { UserSession } from './services/api';
 import './styles/app.css';
 
 export const App: React.FC = () => {
+  // Mobile breakpoint & iOS viewport height management
+  const isMobile = useMediaQuery('(max-width: 820px)');
+  useVisualViewportHeight();
+
   // Navigation & View State
   const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
   const [selectedNoteId, setSelectedNoteId] = useState<string>('k-1');
@@ -53,6 +52,7 @@ export const App: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
 
   // Modals & Drawers
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -60,23 +60,20 @@ export const App: React.FC = () => {
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
-  // User Session
-  const [currentUser, setCurrentUser] = useState<UserSession>({
-    id: 'u-nabin',
-    email: CURRENT_USER.email,
-    name: CURRENT_USER.name,
-    avatar: CURRENT_USER.avatar,
-    role: CURRENT_USER.role,
-    workspaceId: 'w-nabin-eng',
-    workspaceName: CURRENT_USER.workspaceName,
-  });
+  // User Session — null until authenticated
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-  // Data Collections (initialized with defaults, then populated from backend)
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
-  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>(INITIAL_KNOWLEDGE);
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [activities, setActivities] = useState<Activity[]>(INITIAL_ACTIVITIES);
-  const [aiMessages, setAiMessages] = useState<AIMessage[]>(INITIAL_AI_MESSAGES);
+  // Data Collections — empty until loaded from real API
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+
+  // AI Streaming State
+  const [isAiStreaming, setIsAiStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -121,10 +118,10 @@ export const App: React.FC = () => {
   const refreshWorkspaceData = useCallback(async () => {
     try {
       const [fetchedTasks, fetchedKnowledge, fetchedProjects, fetchedActivities] = await Promise.all([
-        api.getTasks().catch(() => INITIAL_TASKS),
-        api.getKnowledge().catch(() => INITIAL_KNOWLEDGE),
-        api.getProjects().catch(() => INITIAL_PROJECTS),
-        api.getActivities().catch(() => INITIAL_ACTIVITIES),
+        api.getTasks(),
+        api.getKnowledge(),
+        api.getProjects(),
+        api.getActivities(),
       ]);
 
       if (fetchedTasks) setTasks(fetchedTasks);
@@ -136,30 +133,33 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Initialize session on mount
+  // Initialize session on mount — no auto-login
   useEffect(() => {
     const initSession = async () => {
       try {
-        // Try getting current authenticated user
         const me = await api.getMe();
         if (me) {
           setCurrentUser(me);
           if (me.theme) setTheme(me.theme as 'dark' | 'light');
+          await refreshWorkspaceData();
         }
       } catch {
-        // Automatically perform demo login as Nabin Thapa if not logged in
-        try {
-          const res = await api.login('nabin@workspace.ai', 'password123');
-          setCurrentUser(res.user);
-        } catch {
-          // Keep offline state
-        }
+        // Not authenticated — show login screen
+        setCurrentUser(null);
       } finally {
-        await refreshWorkspaceData();
+        setIsAuthLoading(false);
       }
     };
 
     initSession();
+
+    // Handle session expiry from api service
+    const onExpired = () => {
+      setCurrentUser(null);
+      setAuthModalOpen(true);
+    };
+    window.addEventListener('myspace:session-expired', onExpired);
+    return () => window.removeEventListener('myspace:session-expired', onExpired);
   }, [refreshWorkspaceData]);
 
   // Task Actions
@@ -297,7 +297,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // AI Message Sending (Real Streaming SSE)
+  // AI Message Sending (Real Streaming SSE with AbortController support)
   const handleSendAIMessage = async (text: string) => {
     const userMsgId = `m-${Date.now()}`;
     const assistantMsgId = `m-${Date.now() + 1}`;
@@ -319,6 +319,10 @@ export const App: React.FC = () => {
     };
 
     setAiMessages(prev => [...prev, userMsg, initialAssistantMsg]);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setIsAiStreaming(true);
 
     try {
       await api.streamAIChat(text, undefined, {
@@ -355,15 +359,30 @@ export const App: React.FC = () => {
         onError: (errMsg) => {
           showToast(errMsg, 'error');
         },
-      });
+      }, controller.signal);
     } catch (err: any) {
-      showToast(err.message || 'AI streaming error', 'error');
+      if (err.name === 'AbortError') {
+        showToast('Generation stopped', 'info');
+      } else {
+        showToast(err.message || 'AI streaming error', 'error');
+      }
+    } finally {
+      setIsAiStreaming(false);
+      abortControllerRef.current = null;
     }
   };
 
+  const handleStopStreaming = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsAiStreaming(false);
+  }, []);
+
   const pendingTasksCount = tasks.filter(t => !t.completed).length;
-  const activeNote = knowledge.find(k => k.id === selectedNoteId) || knowledge[0] || INITIAL_KNOWLEDGE[0];
-  const activeDoc = knowledge.find(k => k.id === selectedDocId) || knowledge[1] || INITIAL_KNOWLEDGE[1];
+  const activeNote = knowledge.find(k => k.id === selectedNoteId) || knowledge[0] || null;
+  const activeDoc = knowledge.find(k => k.id === selectedDocId) || knowledge[1] || null;
 
   // Render Active Main View
   const renderMainView = () => {
@@ -453,6 +472,9 @@ export const App: React.FC = () => {
             onOpenDoc={handleOpenDoc}
             onOpenProject={handleOpenProject}
             onAttachFile={handleUploadFile}
+            isStreaming={isAiStreaming}
+            onStopStreaming={handleStopStreaming}
+            onComposerFocusChange={setIsComposerFocused}
           />
         );
 
@@ -462,9 +484,9 @@ export const App: React.FC = () => {
             theme={theme}
             onToggleTheme={handleToggleTheme}
             showToast={showToast}
-            user={currentUser}
+            user={currentUser ?? undefined}
             onUpdateUser={(updated) => {
-              setCurrentUser(prev => ({ ...prev, ...updated }));
+              setCurrentUser(prev => prev ? { ...prev, ...updated } : prev);
               api.updateProfile(updated).catch(() => {});
             }}
             onOpenAuth={() => setAuthModalOpen(true)}
@@ -481,85 +503,116 @@ export const App: React.FC = () => {
     }
   };
 
-  return (
-    <div className="app-shell-root">
-      {/* =========================================================================
-          DESKTOP APP SHELL (Sidebar + Top Bar + Canvas + Context Panel)
-          ========================================================================= */}
-      <div className="desktop-app-shell">
-        <DesktopSidebar
-          currentTab={currentTab}
-          onSelectTab={setCurrentTab}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
-          pendingTasksCount={pendingTasksCount}
-          user={currentUser}
-          onOpenAuth={() => setAuthModalOpen(true)}
-        />
+  // Show loading spinner while checking session
+  if (isAuthLoading) {
+    return (
+      <div className="app-shell-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: 'var(--bg-app)' }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: '14px', fontFamily: 'inherit' }}>Loading workspace…</div>
+      </div>
+    );
+  }
 
-        <div className="desktop-workspace-column">
-          <DesktopTopBar
+  // Force auth modal when not authenticated
+  if (!currentUser) {
+    return (
+      <div className="app-shell-root" style={{ background: 'var(--bg-app)', height: '100dvh' }}>
+        <AuthModal
+          isOpen={true}
+          onClose={() => {}}
+          onAuthSuccess={(user) => {
+            setCurrentUser(user);
+            setIsAuthLoading(false);
+            refreshWorkspaceData();
+          }}
+          showToast={showToast}
+        />
+        <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`app-shell-root ${isComposerFocused ? 'composer-focused' : ''}`}>
+      {isMobile ? (
+        /* =========================================================================
+            MOBILE APP SHELL (Context Header + Touch Canvas + Bottom Nav)
+            ========================================================================= */
+        <div className={`mobile-app-shell ${isComposerFocused ? 'composer-focused' : ''}`}>
+          <MobileHeader
             currentTab={currentTab}
-            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-            onQuickAdd={() => setAddSheetOpen(true)}
-            rightPanelOpen={rightPanelOpen}
-            onToggleRightPanel={() => setRightPanelOpen(prev => !prev)}
-            showRightPanelToggle={currentTab !== 'note-editor' && currentTab !== 'doc-viewer'}
+            onSelectTab={setCurrentTab}
+            onOpenSearch={() => setCommandPaletteOpen(true)}
+            onOpenAdd={() => setAddSheetOpen(true)}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+            backAction={
+              currentTab === 'note-editor' || currentTab === 'doc-viewer'
+                ? () => setCurrentTab('knowledge')
+                : currentTab === 'project-detail'
+                ? () => setCurrentTab('projects')
+                : undefined
+            }
           />
 
-          <div className="desktop-canvas-row">
-            <main className="desktop-main-canvas" role="main">
-              {renderMainView()}
-            </main>
+          <main className={`mobile-main-canvas ${currentTab === 'ai' ? 'is-ai-view' : ''}`} role="main">
+            {renderMainView()}
+          </main>
 
-            {currentTab !== 'note-editor' && currentTab !== 'doc-viewer' && (
-              <DesktopRightPanel
-                isOpen={rightPanelOpen}
-                onClose={() => setRightPanelOpen(false)}
-                currentTab={currentTab}
-                onNavigate={setCurrentTab}
-                onOpenNote={handleOpenNote}
-                onOpenDoc={handleOpenDoc}
-              />
-            )}
+          <MobileBottomNav
+            currentTab={currentTab}
+            onSelectTab={setCurrentTab}
+            onOpenAdd={() => setAddSheetOpen(true)}
+            onOpenSearch={() => setCommandPaletteOpen(true)}
+            onOpenMoreMenu={() => setMoreDrawerOpen(true)}
+            isHidden={isComposerFocused}
+          />
+        </div>
+      ) : (
+        /* =========================================================================
+            DESKTOP APP SHELL (Sidebar + Top Bar + Canvas + Context Panel)
+            ========================================================================= */
+        <div className="desktop-app-shell">
+          <DesktopSidebar
+            currentTab={currentTab}
+            onSelectTab={setCurrentTab}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+            pendingTasksCount={pendingTasksCount}
+            user={currentUser}
+            onOpenAuth={() => setAuthModalOpen(true)}
+          />
+
+          <div className="desktop-workspace-column">
+            <DesktopTopBar
+              currentTab={currentTab}
+              onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+              onQuickAdd={() => setAddSheetOpen(true)}
+              rightPanelOpen={rightPanelOpen}
+              onToggleRightPanel={() => setRightPanelOpen(prev => !prev)}
+              showRightPanelToggle={currentTab !== 'note-editor' && currentTab !== 'doc-viewer'}
+            />
+
+            <div className="desktop-canvas-row">
+              <main className="desktop-main-canvas" role="main">
+                {renderMainView()}
+              </main>
+
+              {currentTab !== 'note-editor' && currentTab !== 'doc-viewer' && (
+                <DesktopRightPanel
+                  isOpen={rightPanelOpen}
+                  onClose={() => setRightPanelOpen(false)}
+                  currentTab={currentTab}
+                  onNavigate={setCurrentTab}
+                  onOpenNote={handleOpenNote}
+                  onOpenDoc={handleOpenDoc}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* =========================================================================
-          MOBILE APP SHELL (Context Header + Touch Canvas + Bottom Nav)
-          ========================================================================= */}
-      <div className="mobile-app-shell">
-        <MobileHeader
-          currentTab={currentTab}
-          onSelectTab={setCurrentTab}
-          onOpenSearch={() => setCommandPaletteOpen(true)}
-          onOpenAdd={() => setAddSheetOpen(true)}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          backAction={
-            currentTab === 'note-editor' || currentTab === 'doc-viewer'
-              ? () => setCurrentTab('knowledge')
-              : currentTab === 'project-detail'
-              ? () => setCurrentTab('projects')
-              : undefined
-          }
-        />
-
-        <main className={`mobile-main-canvas ${currentTab === 'ai' ? 'is-ai-view' : ''}`} role="main">
-          {renderMainView()}
-        </main>
-
-        <MobileBottomNav
-          currentTab={currentTab}
-          onSelectTab={setCurrentTab}
-          onOpenAdd={() => setAddSheetOpen(true)}
-          onOpenSearch={() => setCommandPaletteOpen(true)}
-          onOpenMoreMenu={() => setMoreDrawerOpen(true)}
-        />
-      </div>
+      )}
 
       {/* =========================================================================
           GLOBAL MODALS, COMMAND PALETTE, BOTTOM SHEETS, AND TOASTS

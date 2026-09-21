@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   avatar_url TEXT,
   role TEXT DEFAULT 'Product Engineer',
+  token_version INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -240,4 +241,14 @@ CREATE INDEX IF NOT EXISTS idx_projects_user_workspace ON projects(user_id, work
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, workspace_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace ON activities(workspace_id, created_at DESC);
+
+-- Full-Text Search (FTS5) for Grounded Retrieval & Fast Workspace Search
+CREATE VIRTUAL TABLE IF NOT EXISTS workspace_fts USING fts5(
+  workspace_id UNINDEXED,
+  item_id UNINDEXED,
+  item_type UNINDEXED,
+  title,
+  content,
+  tokenize = 'porter unicode61'
+);
 `;

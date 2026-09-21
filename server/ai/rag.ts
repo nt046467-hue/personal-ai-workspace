@@ -7,6 +7,23 @@ export interface RAGResponse {
   actions: AIActionItem[];
 }
 
+function escapeXmlAttribute(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function sanitizeXmlContent(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/<\/untrusted_document>/gi, '&lt;/untrusted_document&gt;');
+}
+
 export class RAGPipeline {
   /**
    * Determine if user prompt is asking about their private workspace
@@ -40,9 +57,14 @@ export class RAGPipeline {
         type: res.type,
       });
 
+      const safeId = escapeXmlAttribute(res.id);
+      const safeTitle = escapeXmlAttribute(res.title);
+      const safeType = escapeXmlAttribute(res.type);
+      const safeExcerpt = sanitizeXmlContent(res.excerpt);
+
       // Wrap retrieved content with explicit delimiter to defend against prompt injection
       contextBlocks.push(
-        `<untrusted_document id="${res.id}" title="${res.title}" type="${res.type}">\n${res.excerpt}\n</untrusted_document>`
+        `<untrusted_document id="${safeId}" title="${safeTitle}" type="${safeType}">\n${safeExcerpt}\n</untrusted_document>`
       );
     }
 

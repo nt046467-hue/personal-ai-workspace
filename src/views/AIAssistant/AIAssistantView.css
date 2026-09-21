@@ -56,15 +56,16 @@
 /* Scroll Area */
 .ai-messages-scroll-area {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-6) var(--space-4);
-  display: flex;
-  justify-content: center;
+  display: block;
 }
 
 .ai-content-column {
   width: 100%;
   max-width: 800px;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -330,13 +331,6 @@
 
 /* Mobile full-height chat adjustments (<= 820px) */
 @media (max-width: 820px) {
-  :root {
-    --mobile-nav-height: 60px;
-    --mobile-header-height: 50px;
-    --mobile-composer-height: 62px;
-    --mobile-composer-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
-  }
-
   .ai-workspace-view {
     position: relative;
     flex: 1;
@@ -354,7 +348,7 @@
     display: none;
   }
 
-  /* Scroll Area: Full width, smooth momentum scrolling, proper padding for composer + nav */
+  /* Scroll Area: takes all available flex space */
   .ai-messages-scroll-area {
     flex: 1;
     min-height: 0;
@@ -364,17 +358,15 @@
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
-    padding: 12px 14px;
-    /* nav(60px) + composer(~62px) + safe area + 28px breathing room */
-    padding-bottom: calc(var(--mobile-composer-height, 62px) + var(--mobile-nav-height, 60px) + env(safe-area-inset-bottom, 0px) + 28px);
-    display: flex;
-    justify-content: center;
+    padding: 12px 14px 24px;
+    display: block;
     box-sizing: border-box;
   }
 
   .ai-content-column {
     width: 100%;
     max-width: 100%;
+    margin-inline: auto;
     gap: var(--space-4);
   }
 
@@ -546,15 +538,12 @@
   }
 
   /* ==========================================================================
-     REDESIGNED COMPACT MOBILE COMPOSER
-     ========================================================================== */
+  /* Redesigned mobile composer in normal flex flow */
   .ai-composer-dock {
-    position: fixed;
-    bottom: var(--mobile-composer-bottom, calc(var(--mobile-nav-height, 60px) + env(safe-area-inset-bottom, 0px)));
-    left: 0;
-    right: 0;
-    padding: 6px 12px;
-    background: color-mix(in srgb, var(--bg-app) 92%, transparent);
+    flex: none;
+    position: relative;
+    padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--bg-app) 96%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--border-subtle);
@@ -562,7 +551,6 @@
     box-sizing: border-box;
     display: flex;
     justify-content: center;
-    transition: bottom 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .ai-composer-form {
@@ -616,7 +604,8 @@
   .ai-composer-input {
     flex: 1;
     min-width: 0;
-    font-size: 15px;
+    /* 16px minimum prevents iOS from auto-zooming on input focus (M-4) */
+    font-size: 16px;
     line-height: 1.35;
     padding: 9px 4px 9px 6px;
     min-height: 38px;
@@ -673,4 +662,72 @@
     width: 17px;
     height: 17px;
   }
+
+  .ai-stop-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-danger);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+    cursor: pointer;
+    transition: transform var(--duration-fast) ease, background-color var(--duration-fast) ease;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.35);
+  }
+
+  .ai-stop-btn:active {
+    transform: scale(0.92);
+  }
+}
+
+/* Jump to latest floating pill */
+.ai-jump-latest-btn {
+  position: absolute;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  cursor: pointer;
+  animation: fadeIn 0.15s ease;
+  white-space: nowrap;
+}
+
+.ai-jump-latest-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+}
+
+.ai-stop-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-danger);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) ease, background-color var(--duration-fast) ease;
+}
+
+.ai-stop-btn:hover {
+  background-color: color-mix(in srgb, var(--color-danger) 85%, black);
 }

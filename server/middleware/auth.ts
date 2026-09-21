@@ -1,67 +1,142 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken, AuthPayload } from '../auth/jwt';
+import crypto from 'crypto';
+import { 
+  verifyToken, 
+  verifyRefreshToken, 
+  generateAccessToken, 
+  generateRefreshToken, 
+  AuthPayload 
+} from '../auth/jwt';
 import { getDatabase } from '../db';
+import { config } from '../config';
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthPayload;
 }
 
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  // Extract token from Authorization header or cookie
-  let token: string | undefined;
-
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else if (req.cookies && req.cookies.myspace_session) {
-    token = req.cookies.myspace_session;
-  }
-
-  if (!token) {
-    res.status(401).json({
-      success: false,
-      error: {
-        code: 'UNAUTHORIZED',
-        message: 'Authentication required to access workspace.',
-      },
-    });
-    return;
-  }
-
-  const payload = verifyToken(token);
-  if (!payload) {
-    res.status(401).json({
-      success: false,
-      error: {
-        code: 'INVALID_TOKEN',
-        message: 'Session has expired or token is invalid.',
-      },
-    });
-    return;
-  }
-
-  // Verify that user still exists in database
   const db = getDatabase();
-  const user = db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(payload.userId) as any;
 
-  if (!user) {
-    res.status(401).json({
-      success: false,
-      error: {
-        code: 'USER_NOT_FOUND',
-        message: 'The authenticated user no longer exists.',
-      },
-    });
-    return;
+  // 1. Try to extract access token from cookies (or Bearer header for testing/backward compat)
+  let accessToken: string | undefined = req.cookies?.myspace_access || req.cookies?.myspace_session;
+  if (!accessToken) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      accessToken = authHeader.substring(7);
+    }
   }
 
-  req.user = {
-    userId: user.id,
-    workspaceId: payload.workspaceId,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  };
+  // 2. If access token is present, try to verify it
+  if (accessToken) {
+    const payload = verifyToken(accessToken);
+    if (payload) {
+      const user = db.prepare('SELECT id, email, name, role, token_version FROM users WHERE id = ?').get(payload.userId) as any;
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          error: { code: 'USER_NOT_FOUND', message: 'Authenticated user no longer exists.' },
+        });
+        return;
+      }
 
-  next();
+      if (payload.tokenVersion && user.token_version && payload.tokenVersion !== user.token_version) {
+        res.status(401).json({
+          success: false,
+          error: { code: 'SESSION_REVOKED', message: 'Session has been invalidated. Please log in again.' },
+        });
+        return;
+      }
+
+      req.user = {
+        userId: user.id,
+        workspaceId: payload.workspaceId,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tokenVersion: user.token_version || 1,
+      };
+      return next();
+    }
+  }
+
+  // 3. Access token was missing or expired: try refresh token rotation
+  const refreshToken = req.cookies?.myspace_refresh;
+  if (refreshToken) {
+    const refreshPayload = verifyRefreshToken(refreshToken);
+    if (refreshPayload) {
+      const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const session = db.prepare(`
+        SELECT id, user_id, expires_at 
+        FROM sessions 
+        WHERE id = ? AND refresh_token_hash = ? AND datetime(expires_at) > datetime('now')
+      `).get(refreshPayload.sessionId, refreshHash) as any;
+
+      if (session) {
+        const user = db.prepare('SELECT id, email, name, role, token_version FROM users WHERE id = ?').get(session.user_id) as any;
+        const workspace = db.prepare('SELECT id FROM workspaces WHERE user_id = ? LIMIT 1').get(session.user_id) as any;
+
+        if (user && workspace) {
+          // Rotate refresh token
+          const newRefreshToken = generateRefreshToken({ userId: user.id, sessionId: session.id });
+          const newRefreshHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+          const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+          db.prepare(`
+            UPDATE sessions 
+            SET refresh_token_hash = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+          `).run(newRefreshHash, newExpiresAt, session.id);
+
+          // Generate new 15-minute access token
+          const newAccessToken = generateAccessToken({
+            userId: user.id,
+            workspaceId: workspace.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            tokenVersion: user.token_version || 1,
+          });
+
+          // Set refreshed cookies
+          res.cookie('myspace_access', newAccessToken, {
+            httpOnly: true,
+            secure: config.env === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000,
+          });
+          res.cookie('myspace_session', newAccessToken, {
+            httpOnly: true,
+            secure: config.env === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000,
+          });
+          res.cookie('myspace_refresh', newRefreshToken, {
+            httpOnly: true,
+            secure: config.env === 'production',
+            sameSite: 'lax',
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+          });
+
+          req.user = {
+            userId: user.id,
+            workspaceId: workspace.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            tokenVersion: user.token_version || 1,
+          };
+          return next();
+        }
+      }
+    }
+  }
+
+  // 4. No valid session
+  res.status(401).json({
+    success: false,
+    error: {
+      code: 'UNAUTHORIZED',
+      message: 'Authentication required to access workspace.',
+    },
+  });
 }

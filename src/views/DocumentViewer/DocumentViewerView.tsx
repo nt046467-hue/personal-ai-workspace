@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
 import { api } from '../../services/api';
+import { Markdown } from '../../components/Markdown';
 import './DocumentViewerView.css';
 
 interface DocumentViewerViewProps {
@@ -200,7 +201,9 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
           <div className="doc-ai-messages-list">
             {messages.map((m, idx) => (
               <div key={idx} className={`doc-msg-bubble msg-${m.sender}`}>
-                <div className="msg-content" dangerouslySetInnerHTML={{ __html: m.text.replace(/\n/g, '<br/>') }} />
+                <div className="msg-content">
+                  <Markdown content={m.text} />
+                </div>
                 <span className="msg-timestamp">{m.time}</span>
               </div>
             ))}
@@ -274,7 +277,9 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
             <div className="mobile-ai-messages-scroll">
               {messages.map((m, idx) => (
                 <div key={idx} className={`doc-msg-bubble msg-${m.sender}`}>
-                  <div className="msg-content" dangerouslySetInnerHTML={{ __html: m.text.replace(/\n/g, '<br/>') }} />
+                  <div className="msg-content">
+                    <Markdown content={m.text} />
+                  </div>
                   <span className="msg-timestamp">{m.time}</span>
                 </div>
               ))}

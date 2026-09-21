@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { validateBody } from '../middleware/validate';
+import { createProjectSchema, updateProjectSchema } from '../validation/schemas';
 
 const router = Router();
 router.use(requireAuth);
@@ -62,15 +64,8 @@ router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 // POST /api/projects
-router.post('/', (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(createProjectSchema), (req: AuthenticatedRequest, res: Response): void => {
   const { name, description, color = '#38bdf8', category = 'Engineering', deadline } = req.body;
-  if (!name) {
-    res.status(400).json({
-      success: false,
-      error: { code: 'VALIDATION_ERROR', message: 'Project name is required.' },
-    });
-    return;
-  }
 
   const db = getDatabase();
   const id = `p-${crypto.randomBytes(6).toString('hex')}`;
@@ -89,7 +84,7 @@ router.post('/', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 // PUT /api/projects/:id
-router.put('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.put('/:id', validateBody(updateProjectSchema), (req: AuthenticatedRequest, res: Response): void => {
   const { name, description, color, category, deadline, status, progress } = req.body;
   const db = getDatabase();
 

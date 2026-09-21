@@ -1,18 +1,21 @@
 .mobile-bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: calc(60px + env(safe-area-inset-bottom, 0px));
+  flex: none;
+  width: 100%;
+  min-height: calc(56px + env(safe-area-inset-bottom, 0px));
   background-color: var(--bg-surface);
   border-top: 1px solid var(--border-subtle);
   display: flex;
   align-items: flex-start;
   justify-content: space-around;
-  padding: 6px var(--space-2) env(safe-area-inset-bottom, 0px) var(--space-2);
+  padding: 6px var(--space-2) max(6px, env(safe-area-inset-bottom, 0px)) var(--space-2);
   z-index: 50;
   user-select: none;
   box-sizing: border-box;
+}
+
+.mobile-app-shell.composer-focused .mobile-bottom-nav,
+.mobile-bottom-nav.is-hidden {
+  display: none !important;
 }
 
 .mobile-nav-btn {

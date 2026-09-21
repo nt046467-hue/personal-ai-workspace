@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { DatabaseSync } from 'node:sqlite';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { config } from '../config';
 import { SCHEMA_SQL } from './schema';
@@ -20,7 +21,29 @@ export function getDatabase(): DatabaseSync {
   // Initialize schema
   db.exec(SCHEMA_SQL);
 
-  // Seed default workspace and user if empty
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1;');
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        refresh_token_hash TEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    `);
+  } catch {
+    // Table already exists
+  }
+
+  // Seed default workspace and user if explicitly enabled
   seedDatabaseIfEmpty(db);
 
   return db;
@@ -34,14 +57,20 @@ export function closeDatabase(): void {
 }
 
 function seedDatabaseIfEmpty(db: DatabaseSync) {
+  if (process.env.SEED_DEMO !== 'true' || config.env === 'production') {
+    return;
+  }
+
   const existingUser = db.prepare('SELECT id FROM users LIMIT 1').get();
   if (existingUser) return;
 
-  console.log('[DB] Seeding initial production data for Nabin Thapa...');
+  const demoPassword = 'Demo-' + crypto.randomBytes(8).toString('hex') + '!Aa1';
+  console.log('[DB] Seeding demo workspace data...');
+  console.log(`[DB DEMO ACCOUNT] User: nabin@workspace.ai | Password: ${demoPassword}`);
 
   const userId = 'u-nabin';
   const workspaceId = 'w-nabin-eng';
-  const hashedPassword = bcrypt.hashSync('password123', 10);
+  const hashedPassword = bcrypt.hashSync(demoPassword, 10);
 
   // 1. User & Profile
   db.prepare(`

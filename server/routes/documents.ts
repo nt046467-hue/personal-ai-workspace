@@ -3,11 +3,18 @@ import multer from 'multer';
 import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { createRateLimiter } from '../middleware/rateLimit';
 import { storageService } from '../storage';
 import { documentProcessor } from '../pipeline/documentProcessor';
 
 const router = Router();
 router.use(requireAuth);
+
+const uploadLimiter = createRateLimiter({ 
+  windowMs: 15 * 60 * 1000, 
+  max: 30, 
+  message: 'Upload rate limit reached. Please wait a few minutes.' 
+});
 
 // Configure multer for secure in-memory buffer handling with 25MB max size
 const upload = multer({
@@ -16,7 +23,7 @@ const upload = multer({
 });
 
 // POST /api/documents/upload
-router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/upload', uploadLimiter, upload.single('file'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const file = req.file;
     if (!file) {

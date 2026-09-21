@@ -9,6 +9,7 @@ interface MobileBottomNavProps {
   onOpenAdd: () => void;
   onOpenSearch: () => void;
   onOpenMoreMenu: () => void;
+  isHidden?: boolean;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -17,9 +18,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onOpenAdd,
   onOpenSearch,
   onOpenMoreMenu,
+  isHidden = false,
 }) => {
   return (
-    <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <nav className={`mobile-bottom-nav ${isHidden ? 'is-hidden' : ''}`} aria-label="Mobile Navigation">
       <button 
         className={`mobile-nav-btn ${currentTab === 'home' ? 'active' : ''}`}
         onClick={() => onSelectTab('home')}

@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { validateBody } from '../middleware/validate';
+import { createBookmarkSchema } from '../validation/schemas';
 
 const router = Router();
 router.use(requireAuth);
@@ -44,18 +46,11 @@ router.get('/', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 // POST /api/bookmarks
-router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const { url, title: customTitle, notes, projectId } = req.body;
-  if (!url) {
-    res.status(400).json({
-      success: false,
-      error: { code: 'VALIDATION_ERROR', message: 'URL is required.' },
-    });
-    return;
-  }
+router.post('/', validateBody(createBookmarkSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const { url, title: customTitle, description: customDesc, projectId } = req.body;
 
   let finalTitle = customTitle || url;
-  let description = '';
+  let description = customDesc || '';
   let favicon = '';
 
   // Safe metadata fetching with timeout & SSRF protection
