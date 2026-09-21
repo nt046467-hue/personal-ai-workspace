@@ -417,4 +417,77 @@ test('Security & Multi-Tenant Isolation Test Suite', async (t) => {
     const matches = contextText.match(/<\/untrusted_document>/g);
     assert.strictEqual(matches?.length, 1, 'Only the legitimate outer </untrusted_document> tag should exist');
   });
+
+  await t.test('F-09 FK Isolation: Cannot assign knowledge to cross-tenant projectId', async () => {
+    // Create a project in user A's workspace
+    const projRes = await fetch(`${BASE_URL}/api/projects`, {
+      method: 'POST',
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ name: 'Tenant A Project' }),
+    });
+    assert.strictEqual(projRes.status, 201);
+    const projJson = await projRes.json();
+    const projId = projJson.data.id;
+
+    // User B tries to create a knowledge item referencing User A's projectId
+    const knowledgeRes = await fetch(`${BASE_URL}/api/knowledge`, {
+      method: 'POST',
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({
+        title: 'Hijacked note',
+        content: 'Attempting cross-tenant project assignment',
+        projectId: projId,
+      }),
+    });
+    // Should fail: 404 because the project doesn't belong to B's workspace
+    assert.strictEqual(knowledgeRes.status, 404, 'Cross-tenant projectId reference must return 404');
+    const knowledgeJson = await knowledgeRes.json();
+    assert.strictEqual(knowledgeJson.error?.code, 'NOT_FOUND');
+  });
+
+  await t.test('F-09 FK Isolation: Cannot assign bookmark to cross-tenant projectId', async () => {
+    // Create a project in user A's workspace
+    const projRes = await fetch(`${BASE_URL}/api/projects`, {
+      method: 'POST',
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ name: 'Tenant A Project For Bookmark Test' }),
+    });
+    const projJson = await projRes.json();
+    const projId = projJson.data.id;
+
+    // User B tries to create a bookmark referencing User A's projectId
+    const bmRes = await fetch(`${BASE_URL}/api/bookmarks`, {
+      method: 'POST',
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({
+        url: 'https://example.com/hijack',
+        title: 'Hijacked bookmark',
+        projectId: projId,
+      }),
+    });
+    assert.strictEqual(bmRes.status, 404, 'Cross-tenant projectId for bookmark must return 404');
+    const bmJson = await bmRes.json();
+    assert.strictEqual(bmJson.error?.code, 'NOT_FOUND');
+  });
+
+  await t.test('F-08 FTS Search Isolation: FTS index does not leak cross-tenant results', async () => {
+    // Create a uniquely titled note in User A's workspace
+    const secret = `TOP-SECRET-${Date.now()}`;
+    await fetch(`${BASE_URL}/api/knowledge`, {
+      method: 'POST',
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ title: secret, content: `Confidential data: ${secret}` }),
+    });
+
+    // User B searches for the exact secret title
+    const searchRes = await fetch(`${BASE_URL}/api/search?q=${encodeURIComponent(secret)}`, {
+      headers: { Cookie: sessionB.cookie, 'X-CSRF-Token': sessionB.csrf },
+    });
+    assert.strictEqual(searchRes.status, 200);
+    const searchJson = await searchRes.json();
+    // Verify none of User A's results appear in User B's search
+    for (const result of (searchJson.data || [])) {
+      assert.notStrictEqual(result.title, secret, `FTS search must not leak workspace A note "${secret}" to workspace B`);
+    }
+  });
 });

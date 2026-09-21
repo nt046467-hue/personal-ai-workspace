@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
+import { assertOwned } from '../db/ownership';
 import { createBookmarkSchema } from '../validation/schemas';
 
 const router = Router();
@@ -85,13 +86,16 @@ router.post('/', validateBody(createBookmarkSchema), async (req: AuthenticatedRe
     }
   }
 
+  // Tenant isolation: verify projectId FK belongs to this workspace
+  if (projectId) assertOwned('projects', projectId, req.user!.workspaceId, 'Project not found in your workspace.');
+
   const db = getDatabase();
   const id = `bm-${crypto.randomBytes(6).toString('hex')}`;
 
   db.prepare(`
     INSERT INTO bookmarks (id, workspace_id, user_id, project_id, url, title, description, favicon, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, req.user!.workspaceId, req.user!.userId, projectId || null, url, finalTitle, description, favicon, notes || null);
+  `).run(id, req.user!.workspaceId, req.user!.userId, projectId || null, url, finalTitle, description, favicon, (req.body.notes) || null);
 
   const created = db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id);
   res.status(201).json({ success: true, data: created });

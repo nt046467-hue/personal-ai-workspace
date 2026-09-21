@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
+import { assertOwned } from '../db/ownership';
 import { createKnowledgeSchema, updateKnowledgeSchema } from '../validation/schemas';
 
 const router = Router();
@@ -91,19 +92,26 @@ router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
 
 // POST /api/knowledge
 router.post('/', validateBody(createKnowledgeSchema), (req: AuthenticatedRequest, res: Response): void => {
-  const { title, content, type = 'note', tags = [] } = req.body;
+  const { title, content, type = 'note', tags = [], projectId, folderId } = req.body;
+  const wid = req.user!.workspaceId;
+
+  // Tenant isolation: verify FK references belong to this workspace
+  if (projectId) assertOwned('projects', projectId, wid, 'Project not found in your workspace.');
+  if (folderId) assertOwned('folders', folderId, wid, 'Folder not found in your workspace.');
 
   const db = getDatabase();
   const id = `k-${crypto.randomBytes(6).toString('hex')}`;
   const excerpt = content ? content.slice(0, 160).replace(/[#*`]/g, '') + '...' : 'New scratchpad note';
 
   db.prepare(`
-    INSERT INTO knowledge_items (id, workspace_id, user_id, title, content, excerpt, type, metadata)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO knowledge_items (id, workspace_id, user_id, project_id, folder_id, title, content, excerpt, type, metadata)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
-    req.user!.workspaceId,
+    wid,
     req.user!.userId,
+    projectId || null,
+    folderId || null,
     title.trim(),
     content || '',
     excerpt,
@@ -113,10 +121,10 @@ router.post('/', validateBody(createKnowledgeSchema), (req: AuthenticatedRequest
 
   // Add tags
   for (const tagName of tags) {
-    let tag = db.prepare('SELECT id FROM tags WHERE workspace_id = ? AND name = ?').get(req.user!.workspaceId, tagName) as any;
+    let tag = db.prepare('SELECT id FROM tags WHERE workspace_id = ? AND name = ?').get(wid, tagName) as any;
     if (!tag) {
       const tagId = `tag-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      db.prepare('INSERT INTO tags (id, workspace_id, user_id, name) VALUES (?, ?, ?, ?)').run(tagId, req.user!.workspaceId, req.user!.userId, tagName);
+      db.prepare('INSERT INTO tags (id, workspace_id, user_id, name) VALUES (?, ?, ?, ?)').run(tagId, wid, req.user!.userId, tagName);
       tag = { id: tagId };
     }
     db.prepare('INSERT OR IGNORE INTO item_tags (item_id, tag_id, item_type) VALUES (?, ?, ?)').run(id, tag.id, 'knowledge');
@@ -132,11 +140,16 @@ router.post('/', validateBody(createKnowledgeSchema), (req: AuthenticatedRequest
 
 // PUT /api/knowledge/:id (Autosave & update)
 router.put('/:id', validateBody(updateKnowledgeSchema), (req: AuthenticatedRequest, res: Response): void => {
-  const { title, content, tags, pinned } = req.body;
+  const { title, content, tags, pinned, projectId, folderId } = req.body;
+  const wid = req.user!.workspaceId;
   const db = getDatabase();
 
+  // Tenant isolation: verify FK references belong to this workspace
+  if (projectId) assertOwned('projects', projectId, wid, 'Project not found in your workspace.');
+  if (folderId) assertOwned('folders', folderId, wid, 'Folder not found in your workspace.');
+
   const existing = db.prepare('SELECT id, metadata FROM knowledge_items WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId) as any;
+    .get(req.params.id, wid) as any;
 
   if (!existing) {
     res.status(404).json({
@@ -156,6 +169,8 @@ router.put('/:id', validateBody(updateKnowledgeSchema), (req: AuthenticatedReque
         content = COALESCE(?, content),
         excerpt = COALESCE(?, excerpt),
         pinned = COALESCE(?, pinned),
+        project_id = CASE WHEN ? THEN ? ELSE project_id END,
+        folder_id = CASE WHEN ? THEN ? ELSE folder_id END,
         metadata = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND workspace_id = ?
@@ -164,9 +179,11 @@ router.put('/:id', validateBody(updateKnowledgeSchema), (req: AuthenticatedReque
     content !== undefined ? content : null,
     excerpt !== undefined ? excerpt : null,
     pinned !== undefined ? (pinned ? 1 : 0) : null,
+    projectId !== undefined ? 1 : 0, projectId || null,
+    folderId !== undefined ? 1 : 0, folderId || null,
     JSON.stringify(meta),
     req.params.id,
-    req.user!.workspaceId
+    wid
   );
 
   const updated = db.prepare('SELECT * FROM knowledge_items WHERE id = ?').get(req.params.id);

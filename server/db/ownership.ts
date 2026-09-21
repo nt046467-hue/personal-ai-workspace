@@ -1,4 +1,6 @@
 import { getDatabase } from './index';
+import type { Response, NextFunction } from 'express';
+import type { AuthenticatedRequest } from '../middleware/auth';
 
 const ALLOWED_TABLES = new Set([
   'projects',
@@ -11,8 +13,7 @@ const ALLOWED_TABLES = new Set([
 ]);
 
 /**
- * Asserts that a record exists in the given table and belongs to the specified workspace.
- * Prevents IDOR and cross-tenant leakage.
+ * Checks ownership without throwing. Returns false if not owned.
  */
 export function isOwnedByWorkspace(table: string, id: string, workspaceId: string): boolean {
   if (!id || !workspaceId) return false;
@@ -25,6 +26,9 @@ export function isOwnedByWorkspace(table: string, id: string, workspaceId: strin
   return Boolean(row);
 }
 
+/**
+ * Throws an error (caught by Express error handler) when ownership check fails.
+ */
 export function assertOwned(table: string, id: string, workspaceId: string, customError?: string): void {
   if (!isOwnedByWorkspace(table, id, workspaceId)) {
     const err: any = new Error(customError || `${table.slice(0, -1)} not found or access denied.`);
@@ -33,3 +37,24 @@ export function assertOwned(table: string, id: string, workspaceId: string, cust
     throw err;
   }
 }
+
+/**
+ * Express middleware: reads req.params.id and asserts it belongs to the current workspace.
+ * Usage: router.get('/:id', requireOwned('knowledge_items'), handler)
+ */
+export function requireOwned(table: string, paramName = 'id') {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    const id = req.params[paramName];
+    const workspaceId = req.user?.workspaceId;
+    if (!id || !workspaceId) {
+      res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Missing ID or workspace.' } });
+      return;
+    }
+    if (!isOwnedByWorkspace(table, id, workspaceId)) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Resource not found or access denied.' } });
+      return;
+    }
+    next();
+  };
+}
+

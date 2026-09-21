@@ -251,4 +251,41 @@ CREATE VIRTUAL TABLE IF NOT EXISTS workspace_fts USING fts5(
   content,
   tokenize = 'porter unicode61'
 );
+
+-- Dedicated knowledge FTS for high-accuracy RAG retrieval
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+  workspace_id UNINDEXED,
+  title,
+  content,
+  content=knowledge_items,
+  content_rowid=rowid,
+  tokenize = 'porter unicode61'
+);
+
+-- FTS5 triggers: keep workspace_fts in sync with knowledge_items
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_fts_insert
+AFTER INSERT ON knowledge_items BEGIN
+  INSERT INTO workspace_fts(workspace_id, item_id, item_type, title, content)
+  VALUES (new.workspace_id, new.id, new.type, new.title, COALESCE(new.content, ''));
+  INSERT INTO knowledge_fts(workspace_id, title, content)
+  VALUES (new.workspace_id, new.title, COALESCE(new.content, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_fts_update
+AFTER UPDATE ON knowledge_items BEGIN
+  DELETE FROM workspace_fts WHERE item_id = old.id;
+  INSERT INTO workspace_fts(workspace_id, item_id, item_type, title, content)
+  VALUES (new.workspace_id, new.id, new.type, new.title, COALESCE(new.content, ''));
+  INSERT INTO knowledge_fts(knowledge_fts, rowid, workspace_id, title, content)
+  VALUES ('delete', old.rowid, old.workspace_id, old.title, COALESCE(old.content, ''));
+  INSERT INTO knowledge_fts(rowid, workspace_id, title, content)
+  VALUES (new.rowid, new.workspace_id, new.title, COALESCE(new.content, ''));
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_fts_delete
+AFTER DELETE ON knowledge_items BEGIN
+  DELETE FROM workspace_fts WHERE item_id = old.id;
+  INSERT INTO knowledge_fts(knowledge_fts, rowid, workspace_id, title, content)
+  VALUES ('delete', old.rowid, old.workspace_id, old.title, COALESCE(old.content, ''));
+END;
 `;

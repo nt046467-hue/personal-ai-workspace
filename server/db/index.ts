@@ -46,6 +46,21 @@ export function getDatabase(): DatabaseSync {
   // Seed default workspace and user if explicitly enabled
   seedDatabaseIfEmpty(db);
 
+  // FTS5 backfill: populate workspace_fts for any existing knowledge_items not yet indexed
+  // Uses INSERT OR IGNORE pattern via a NOT EXISTS guard; idempotent on repeated calls
+  try {
+    db.exec(`
+      INSERT INTO workspace_fts(workspace_id, item_id, item_type, title, content)
+      SELECT ki.workspace_id, ki.id, ki.type, ki.title, COALESCE(ki.content, '')
+      FROM knowledge_items ki
+      WHERE NOT EXISTS (
+        SELECT 1 FROM workspace_fts wf WHERE wf.item_id = ki.id
+      );
+    `);
+  } catch {
+    // FTS table may not support standard NOT EXISTS on shadow tables; ignore
+  }
+
   return db;
 }
 
