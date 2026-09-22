@@ -7,7 +7,9 @@ import {
   FileText, 
   Bot, 
   ChevronRight,
-  ArrowLeft
+  ArrowLeft,
+  X,
+  FolderKanban
 } from 'lucide-react';
 import type { Project, Task, KnowledgeItem } from '../../data/mockData';
 import './ProjectsView.css';
@@ -21,6 +23,7 @@ interface ProjectsViewProps {
   onToggleTask: (id: string) => void;
   onOpenNote: (id: string) => void;
   onOpenDoc: (id: string) => void;
+  onCreateProject?: (project: { name: string; description: string; color?: string; category?: string; deadline?: string }) => Promise<void>;
 }
 
 export const ProjectsView: React.FC<ProjectsViewProps> = ({
@@ -32,7 +35,15 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   onToggleTask,
   onOpenNote,
   onOpenDoc,
+  onCreateProject,
 }) => {
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newCategory, setNewCategory] = useState('AI & Core Platform');
+  const [newColor, setNewColor] = useState('#6366f1');
+  const [newDeadline, setNewDeadline] = useState('Nov 30, 2026');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'tasks' | 'knowledge' | 'ai'>('overview');
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -196,6 +207,37 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
     );
   }
 
+  const handleCreateProjectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setIsSubmitting(true);
+    try {
+      if (onCreateProject) {
+        await onCreateProject({
+          name: newName.trim(),
+          description: newDescription.trim(),
+          category: newCategory,
+          color: newColor,
+          deadline: newDeadline || 'Upcoming',
+        });
+      }
+      setIsCreateModalOpen(false);
+      setNewName('');
+      setNewDescription('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const COLOR_OPTIONS = [
+    { label: 'Indigo', value: '#6366f1' },
+    { label: 'Sky', value: '#0ea5e9' },
+    { label: 'Emerald', value: '#10b981' },
+    { label: 'Amber', value: '#f59e0b' },
+    { label: 'Rose', value: '#ec4899' },
+    { label: 'Purple', value: '#8b5cf6' },
+  ];
+
   // Projects Overview List / Grid
   return (
     <div className="projects-view-container">
@@ -204,57 +246,164 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           <h1 className="projects-heading">Engineering & Product Initiatives</h1>
           <p className="projects-subheading">Track milestones, related architecture specs, and active deliverables.</p>
         </div>
-        <button className="btn btn-primary btn-sm">
+        <button className="btn btn-primary btn-sm" onClick={() => setIsCreateModalOpen(true)}>
           <Plus size={14} />
           <span>New Project</span>
         </button>
       </div>
 
       {/* Projects Grid */}
-      <div className="projects-grid">
-        {projects.map((p) => (
-          <div 
-            key={p.id} 
-            className="project-card"
-            onClick={() => onSelectProject(p.id)}
-          >
-            <div className="project-card-top">
-              <div className="project-card-badge-row">
-                <div className="project-color-dot" style={{ backgroundColor: p.color }} />
-                <span className="project-category-text">{p.category}</span>
+      {projects.length === 0 ? (
+        <div className="empty-projects-state">
+          <FolderKanban size={40} className="empty-projects-icon" />
+          <h3>No projects in workspace</h3>
+          <p>Create initiatives to organize your deliverables, architecture notes, and actionable tasks.</p>
+          <button className="btn btn-primary btn-sm" onClick={() => setIsCreateModalOpen(true)}>
+            <Plus size={14} />
+            <span>Create First Project</span>
+          </button>
+        </div>
+      ) : (
+        <div className="projects-grid">
+          {projects.map((p) => (
+            <div 
+              key={p.id} 
+              className="project-card"
+              onClick={() => onSelectProject(p.id)}
+            >
+              <div className="project-card-top">
+                <div className="project-card-badge-row">
+                  <div className="project-color-dot" style={{ backgroundColor: p.color }} />
+                  <span className="project-category-text">{p.category}</span>
+                </div>
+                <span className={`badge ${p.status === 'active' ? 'badge-success' : 'badge-warning'}`}>
+                  {p.status.replace('_', ' ')}
+                </span>
               </div>
-              <span className={`badge ${p.status === 'active' ? 'badge-success' : 'badge-warning'}`}>
-                {p.status.replace('_', ' ')}
-              </span>
+
+              <h2 className="project-card-name">{p.name}</h2>
+              <p className="project-card-desc">{p.description}</p>
+
+              <div className="project-card-progress">
+                <div className="proj-progress-track">
+                  <div 
+                    className="proj-progress-fill" 
+                    style={{ width: `${p.progress}%`, backgroundColor: p.color }} 
+                  />
+                </div>
+                <div className="project-card-progress-labels">
+                  <span>{p.progress}% completed</span>
+                  <span>{p.openTasksCount} tasks open</span>
+                </div>
+              </div>
+
+              <div className="project-card-footer">
+                <span className="project-deadline">
+                  <Calendar size={12} style={{ marginRight: 4 }} /> Due {p.deadline}
+                </span>
+                <span className="project-open-link">
+                  Workspace <ChevronRight size={14} />
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create Project Modal */}
+      {isCreateModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
+          <div className="project-create-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>New Engineering Initiative</h2>
+              <button className="btn-icon" onClick={() => setIsCreateModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <h2 className="project-card-name">{p.name}</h2>
-            <p className="project-card-desc">{p.description}</p>
-
-            <div className="project-card-progress">
-              <div className="proj-progress-track">
-                <div 
-                  className="proj-progress-fill" 
-                  style={{ width: `${p.progress}%`, backgroundColor: p.color }} 
+            <form onSubmit={handleCreateProjectSubmit} className="create-project-form">
+              <div className="form-group">
+                <label>Project Name *</label>
+                <input 
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Distributed Consensus Engine"
+                  autoFocus
+                  required
                 />
               </div>
-              <div className="project-card-progress-labels">
-                <span>{p.progress}% completed</span>
-                <span>{p.openTasksCount} tasks open</span>
-              </div>
-            </div>
 
-            <div className="project-card-footer">
-              <span className="project-deadline">
-                <Calendar size={12} style={{ marginRight: 4 }} /> Due {p.deadline}
-              </span>
-              <span className="project-open-link">
-                Workspace <ChevronRight size={14} />
-              </span>
-            </div>
+              <div className="form-row-2">
+                <div className="form-group">
+                  <label>Category</label>
+                  <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)}>
+                    <option value="AI & Core Platform">AI & Core Platform</option>
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Mobile App">Mobile App</option>
+                    <option value="Design System">Design System</option>
+                    <option value="Security & Compliance">Security & Compliance</option>
+                    <option value="General">General</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Target Deadline</label>
+                  <input 
+                    type="text"
+                    value={newDeadline}
+                    onChange={(e) => setNewDeadline(e.target.value)}
+                    placeholder="e.g. Nov 30, 2026"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Accent Color</label>
+                <div className="color-swatches-row">
+                  {COLOR_OPTIONS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      className={`color-swatch-btn ${newColor === c.value ? 'selected' : ''}`}
+                      style={{ backgroundColor: c.value }}
+                      onClick={() => setNewColor(c.value)}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Description & Scope</label>
+                <textarea 
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="Summarize initiative goals, technical constraints, and deliverables..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="modal-actions-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => setIsCreateModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  disabled={!newName.trim() || isSubmitting}
+                >
+                  {isSubmitting ? 'Creating...' : 'Create Initiative'}
+                </button>
+              </div>
+            </form>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

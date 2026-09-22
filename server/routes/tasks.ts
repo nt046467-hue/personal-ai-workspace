@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
-import { assertOwned } from '../db/ownership';
+import { assertOwned, isOwnedByWorkspace } from '../db/ownership';
 
 const router = Router();
 router.use(requireAuth);
@@ -73,14 +73,32 @@ router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> 
 // POST /api/tasks
 router.post('/', validateBody(taskSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title, project, projectId, dueDate, dueCategory = 'today', priority = 'medium', notes, estimatedMinutes = 30 } = req.body;
-  const targetProjectId = projectId || project || null;
+  const db = getDatabase();
 
-  // Enforce tenant boundary on foreign project key
-  if (targetProjectId) {
-    await assertOwned('projects', targetProjectId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
+  let targetProjectId: string | null = null;
+  const candidateId = projectId || (project && project.startsWith('p-') ? project : null);
+
+  if (candidateId && candidateId.trim()) {
+    const trimmedId = candidateId.trim();
+    const isOwned = await isOwnedByWorkspace('projects', trimmedId, req.user!.workspaceId);
+    if (isOwned) {
+      targetProjectId = trimmedId;
+    } else if (trimmedId === 'p-1') {
+      // Gracefully handle legacy client hardcoded 'p-1' fallback if project does not exist
+      targetProjectId = null;
+    } else {
+      await assertOwned('projects', trimmedId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
+    }
+  } else if (project && typeof project === 'string' && project.trim() && project.trim().toLowerCase() !== 'general workspace') {
+    const pRes = await db.execute({
+      sql: 'SELECT id FROM projects WHERE name = ? AND workspace_id = ? LIMIT 1',
+      args: [project.trim(), req.user!.workspaceId],
+    });
+    if (pRes.rows.length > 0) {
+      targetProjectId = String(pRes.rows[0].id);
+    }
   }
 
-  const db = getDatabase();
   const id = `t-${crypto.randomBytes(6).toString('hex')}`;
 
   await db.execute({
@@ -184,8 +202,14 @@ router.put('/:id', validateBody(updateTaskSchema), async (req: AuthenticatedRequ
     return;
   }
 
-  if (projectId) {
-    await assertOwned('projects', projectId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
+  if (projectId && projectId.trim()) {
+    const trimmedId = projectId.trim();
+    const isOwned = await isOwnedByWorkspace('projects', trimmedId, req.user!.workspaceId);
+    if (!isOwned && trimmedId === 'p-1') {
+      // Ignore legacy 'p-1' if not owned by this workspace
+    } else {
+      await assertOwned('projects', trimmedId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
+    }
   }
 
   await db.execute({

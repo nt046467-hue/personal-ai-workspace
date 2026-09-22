@@ -243,6 +243,10 @@ class ApiService {
     return this.request<Activity[]>('/activities');
   }
 
+  public async deleteActivity(id: string): Promise<void> {
+    await this.request(`/activities/${id}`, { method: 'DELETE' });
+  }
+
   // --- Search APIs ---
   public async searchWorkspace(query: string, category: string = 'all'): Promise<any[]> {
     if (!query.trim()) return [];

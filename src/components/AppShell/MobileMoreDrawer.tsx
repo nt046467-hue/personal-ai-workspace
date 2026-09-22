@@ -1,7 +1,8 @@
 import React from 'react';
 import { FolderKanban, CheckSquare, Settings, BookOpen, Sun, Moon, X } from 'lucide-react';
-import { CURRENT_USER } from '../../data/mockData';
+import { CURRENT_USER, type Task, type Project, type KnowledgeItem } from '../../data/mockData';
 import type { NavigationTab } from './DesktopSidebar';
+import type { UserSession } from '../../services/api';
 import './MobileMoreDrawer.css';
 
 interface MobileMoreDrawerProps {
@@ -11,6 +12,10 @@ interface MobileMoreDrawerProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onOpenProfile?: () => void;
+  tasks?: Task[];
+  projects?: Project[];
+  knowledge?: KnowledgeItem[];
+  user?: UserSession | null;
 }
 
 export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
@@ -20,8 +25,33 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
   theme,
   onToggleTheme,
   onOpenProfile,
+  tasks,
+  projects,
+  knowledge,
+  user,
 }) => {
   if (!isOpen) return null;
+
+  const userDisplayName = user?.name || CURRENT_USER.name;
+  const userEmail = user?.email || CURRENT_USER.email;
+  const userAvatar = user?.avatar || CURRENT_USER.avatar;
+
+  const pendingTasks = (tasks || []).filter(t => !t.completed);
+  const pendingCount = pendingTasks.length;
+  const todayPendingCount = pendingTasks.filter(t => t.dueCategory === 'today').length;
+  const taskSubText = pendingCount === 0
+    ? 'All done for now'
+    : `${pendingCount} pending${todayPendingCount > 0 ? ` (${todayPendingCount} today)` : ''}`;
+
+  const activeProjectsCount = (projects || []).length;
+  const projectSubText = activeProjectsCount === 0
+    ? 'No active tracks'
+    : `${activeProjectsCount} active ${activeProjectsCount === 1 ? 'project' : 'projects'}`;
+
+  const knowledgeCount = (knowledge || []).length;
+  const knowledgeSubText = knowledgeCount === 0
+    ? 'No saved items'
+    : `${knowledgeCount} ${knowledgeCount === 1 ? 'document / note' : 'documents & notes'}`;
 
   return (
     <div className="bottom-sheet-overlay" onClick={onClose}>
@@ -48,11 +78,11 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
           }}
         >
           <div className="more-user-avatar">
-            {CURRENT_USER.avatar}
+            {userAvatar}
           </div>
           <div className="more-user-info">
-            <span className="more-user-name">{CURRENT_USER.name}</span>
-            <span className="more-user-email">{CURRENT_USER.email}</span>
+            <span className="more-user-name">{userDisplayName}</span>
+            <span className="more-user-email">{userEmail}</span>
           </div>
           <button className="btn-icon" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close menu">
             <X size={18} />
@@ -69,7 +99,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
               <CheckSquare size={20} />
             </div>
             <span className="more-card-title">Tasks</span>
-            <span className="more-card-sub">3 pending today</span>
+            <span className="more-card-sub">{taskSubText}</span>
           </button>
 
           <button 
@@ -80,7 +110,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
               <FolderKanban size={20} />
             </div>
             <span className="more-card-title">Projects</span>
-            <span className="more-card-sub">4 active tracks</span>
+            <span className="more-card-sub">{projectSubText}</span>
           </button>
 
           <button 
@@ -91,7 +121,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
               <BookOpen size={20} />
             </div>
             <span className="more-card-title">Knowledge</span>
-            <span className="more-card-sub">6 documents & notes</span>
+            <span className="more-card-sub">{knowledgeSubText}</span>
           </button>
 
           <button 

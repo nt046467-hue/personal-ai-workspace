@@ -51,11 +51,39 @@ export class StorageService {
     const pathname = `workspaces/${safeWorkspaceId}/${filename}`;
 
     // If Vercel Blob token is configured, upload to Blob storage
-    if (config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN) {
-      const blob = await put(pathname, buffer, {
-        access: 'public',
-        token: config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN,
-      });
+    const blobToken = config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN;
+    if (blobToken) {
+      const preferredAccess = (process.env.BLOB_ACCESS as 'public' | 'private') || 'public';
+      let blob;
+      try {
+        blob = await put(pathname, buffer, {
+          access: preferredAccess,
+          token: blobToken,
+        });
+      } catch (err: any) {
+        if (
+          err?.message?.includes('Cannot use public access on a private store') ||
+          err?.message?.includes('private access') ||
+          err?.message?.includes('private store')
+        ) {
+          console.warn('[Storage] Retrying blob upload with access: private');
+          blob = await put(pathname, buffer, {
+            access: 'private',
+            token: blobToken,
+          });
+        } else if (
+          err?.message?.includes('Cannot use private access on a public store') ||
+          err?.message?.includes('public store')
+        ) {
+          console.warn('[Storage] Retrying blob upload with access: public');
+          blob = await put(pathname, buffer, {
+            access: 'public',
+            token: blobToken,
+          });
+        } else {
+          throw err;
+        }
+      }
 
       return {
         filename,
@@ -84,7 +112,12 @@ export class StorageService {
    */
   public async getFileBuffer(storagePath: string): Promise<Buffer> {
     if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
-      const res = await fetch(storagePath);
+      const headers: Record<string, string> = {};
+      const token = config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN;
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(storagePath, { headers });
       if (!res.ok) {
         throw new Error(`Failed to fetch file from storage: ${res.statusText}`);
       }

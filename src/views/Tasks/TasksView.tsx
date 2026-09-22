@@ -8,11 +8,12 @@ import {
   X, 
   CheckSquare
 } from 'lucide-react';
-import type { Task } from '../../data/mockData';
+import type { Task, Project } from '../../data/mockData';
 import './TasksView.css';
 
 interface TasksViewProps {
   tasks: Task[];
+  projects?: Project[];
   onToggleTask: (id: string) => void;
   onAddTask: (task: Omit<Task, 'id' | 'completed'>) => void;
   onDeleteTask: (id: string) => void;
@@ -21,6 +22,7 @@ interface TasksViewProps {
 
 export const TasksView: React.FC<TasksViewProps> = ({
   tasks,
+  projects = [],
   onToggleTask,
   onAddTask,
   onDeleteTask,
@@ -32,7 +34,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   // New task form state
   const [newTitle, setNewTitle] = useState('');
-  const [newProject, setNewProject] = useState('Personal AI Workspace');
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const [newPriority, setNewPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [newDueDate, setNewDueDate] = useState('Today, 6:00 PM');
   const [newCategory, setNewCategory] = useState<'today' | 'tomorrow' | 'upcoming'>('today');
@@ -40,15 +42,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+    const chosenProject = projects.find(p => p.id === selectedProjectId);
     onAddTask({
-      title: newTitle,
-      project: newProject,
-      projectId: 'p-1',
+      title: newTitle.trim(),
+      project: chosenProject ? chosenProject.name : 'General Workspace',
+      projectId: chosenProject ? chosenProject.id : null,
       dueDate: newDueDate,
       dueCategory: newCategory,
       priority: newPriority,
     });
     setNewTitle('');
+    setSelectedProjectId('');
     setIsAddModalOpen(false);
     showToast('Task created');
   };
@@ -282,11 +286,16 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <div className="form-row-2">
                 <div className="form-group">
                   <label>Project</label>
-                  <select value={newProject} onChange={(e) => setNewProject(e.target.value)}>
-                    <option value="Personal AI Workspace">Personal AI Workspace</option>
-                    <option value="Cloud Infrastructure Audit">Cloud Infrastructure Audit</option>
-                    <option value="Fitness & Recovery Mobile App">Fitness & Recovery Mobile App</option>
-                    <option value="Design System v2">Design System v2</option>
+                  <select 
+                    value={selectedProjectId} 
+                    onChange={(e) => setSelectedProjectId(e.target.value)}
+                  >
+                    <option value="">General Workspace</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

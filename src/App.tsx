@@ -261,6 +261,26 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleCreateProject = async (project: { name: string; description: string; color?: string; category?: string; deadline?: string }) => {
+    try {
+      const created = await api.createProject(project);
+      setProjects(prev => [created, ...prev]);
+      showToast(`Project "${created.name}" created`);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to create project', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteActivity = async (id: string) => {
+    setActivities(prev => prev.filter(a => a.id !== id));
+    try {
+      await api.deleteActivity(id);
+    } catch {
+      // Non-fatal: optimistic remove already happened
+    }
+  };
+
   // Real Pinned items for Sidebar & Quick Access
   const pinnedItems = React.useMemo(() => knowledge.filter(k => k.pinned), [knowledge]);
 
@@ -504,6 +524,7 @@ export const App: React.FC = () => {
             onOpenProject={handleOpenProject}
             onOpenAdd={() => setAddSheetOpen(true)}
             user={currentUser ?? undefined}
+            onDeleteActivity={handleDeleteActivity}
           />
         );
 
@@ -550,6 +571,7 @@ export const App: React.FC = () => {
         return (
           <TasksView
             tasks={tasks}
+            projects={projects}
             onToggleTask={handleToggleTask}
             onAddTask={handleAddTask}
             onDeleteTask={handleDeleteTask}
@@ -569,6 +591,7 @@ export const App: React.FC = () => {
             onToggleTask={handleToggleTask}
             onOpenNote={handleOpenNote}
             onOpenDoc={handleOpenDoc}
+            onCreateProject={handleCreateProject}
           />
         );
 
@@ -804,6 +827,10 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onOpenProfile={() => setProfileOpen(true)}
+        tasks={tasks}
+        projects={projects}
+        knowledge={knowledge}
+        user={currentUser}
       />
 
       <MobileNotificationSheet

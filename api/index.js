@@ -43,7 +43,7 @@ var config = {
   aiApiKey: process.env.AI_API_KEY || void 0,
   aiModel: process.env.AI_MODEL || void 0,
   aiBaseUrl: process.env.AI_BASE_URL || void 0,
-  aiDailyCapDefault: parseInt(process.env.AI_DAILY_CAP_DEFAULT || "20", 10),
+  aiDailyCapDefault: parseInt(process.env.AI_DAILY_CAP_DEFAULT || "500", 10),
   appOrigins: [
     ...(process.env.APP_ORIGIN || "http://localhost:5173,http://localhost:3001,http://127.0.0.1:5173").split(",").map((o) => o.trim()).filter(Boolean),
     ...process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [],
@@ -1838,11 +1838,28 @@ router3.get("/", async (req, res) => {
 });
 router3.post("/", validateBody(taskSchema), async (req, res) => {
   const { title, project, projectId, dueDate, dueCategory = "today", priority = "medium", notes, estimatedMinutes = 30 } = req.body;
-  const targetProjectId = projectId || project || null;
-  if (targetProjectId) {
-    await assertOwned("projects", targetProjectId, req.user.workspaceId, "Selected project does not exist in your workspace.");
-  }
   const db = getDatabase();
+  let targetProjectId = null;
+  const candidateId = projectId || (project && project.startsWith("p-") ? project : null);
+  if (candidateId && candidateId.trim()) {
+    const trimmedId = candidateId.trim();
+    const isOwned = await isOwnedByWorkspace("projects", trimmedId, req.user.workspaceId);
+    if (isOwned) {
+      targetProjectId = trimmedId;
+    } else if (trimmedId === "p-1") {
+      targetProjectId = null;
+    } else {
+      await assertOwned("projects", trimmedId, req.user.workspaceId, "Selected project does not exist in your workspace.");
+    }
+  } else if (project && typeof project === "string" && project.trim() && project.trim().toLowerCase() !== "general workspace") {
+    const pRes = await db.execute({
+      sql: "SELECT id FROM projects WHERE name = ? AND workspace_id = ? LIMIT 1",
+      args: [project.trim(), req.user.workspaceId]
+    });
+    if (pRes.rows.length > 0) {
+      targetProjectId = String(pRes.rows[0].id);
+    }
+  }
   const id = `t-${crypto6.randomBytes(6).toString("hex")}`;
   await db.execute({
     sql: `
@@ -1928,8 +1945,13 @@ router3.put("/:id", validateBody(updateTaskSchema2), async (req, res) => {
     });
     return;
   }
-  if (projectId) {
-    await assertOwned("projects", projectId, req.user.workspaceId, "Selected project does not exist in your workspace.");
+  if (projectId && projectId.trim()) {
+    const trimmedId = projectId.trim();
+    const isOwned = await isOwnedByWorkspace("projects", trimmedId, req.user.workspaceId);
+    if (!isOwned && trimmedId === "p-1") {
+    } else {
+      await assertOwned("projects", trimmedId, req.user.workspaceId, "Selected project does not exist in your workspace.");
+    }
   }
   await db.execute({
     sql: `
@@ -2371,11 +2393,32 @@ var StorageService = class {
     const randomHash = crypto9.randomBytes(16).toString("hex");
     const filename = `${randomHash}${safeExt}`;
     const pathname = `workspaces/${safeWorkspaceId}/${filename}`;
-    if (config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN) {
-      const blob = await put(pathname, buffer, {
-        access: "public",
-        token: config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN
-      });
+    const blobToken = config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN;
+    if (blobToken) {
+      const preferredAccess = process.env.BLOB_ACCESS || "public";
+      let blob;
+      try {
+        blob = await put(pathname, buffer, {
+          access: preferredAccess,
+          token: blobToken
+        });
+      } catch (err) {
+        if (err?.message?.includes("Cannot use public access on a private store") || err?.message?.includes("private access") || err?.message?.includes("private store")) {
+          console.warn("[Storage] Retrying blob upload with access: private");
+          blob = await put(pathname, buffer, {
+            access: "private",
+            token: blobToken
+          });
+        } else if (err?.message?.includes("Cannot use private access on a public store") || err?.message?.includes("public store")) {
+          console.warn("[Storage] Retrying blob upload with access: public");
+          blob = await put(pathname, buffer, {
+            access: "public",
+            token: blobToken
+          });
+        } else {
+          throw err;
+        }
+      }
       return {
         filename,
         storagePath: blob.url,
@@ -2399,7 +2442,12 @@ var StorageService = class {
    */
   async getFileBuffer(storagePath) {
     if (storagePath.startsWith("http://") || storagePath.startsWith("https://")) {
-      const res = await fetch(storagePath);
+      const headers = {};
+      const token = config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN;
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch(storagePath, { headers });
       if (!res.ok) {
         throw new Error(`Failed to fetch file from storage: ${res.statusText}`);
       }
@@ -2432,9 +2480,7 @@ var storageService = new StorageService();
 
 // server/pipeline/documentProcessor.ts
 import { createRequire } from "module";
-var require2 = createRequire(import.meta.url);
-var pdfParse = require2("pdf-parse");
-var mammoth = require2("mammoth");
+var _require = createRequire(import.meta.url);
 var DocumentProcessor = class {
   /**
    * Extract raw text from file buffer based on MIME type or filename extension
@@ -2443,6 +2489,7 @@ var DocumentProcessor = class {
     const ext = filename.split(".").pop()?.toLowerCase();
     if (mimeType === "application/pdf" || ext === "pdf") {
       try {
+        const pdfParse = _require("pdf-parse");
         const data = await pdfParse(buffer);
         return {
           text: data.text || "",
@@ -2455,6 +2502,7 @@ var DocumentProcessor = class {
     }
     if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || ext === "docx") {
       try {
+        const mammoth = _require("mammoth");
         const result = await mammoth.extractRawText({ buffer });
         return {
           text: result.value || "",
@@ -3158,7 +3206,7 @@ async function incrementAndCheckDailyUsage(userId, cap) {
     });
     const currentCount = checkRes.rows.length > 0 ? Number(checkRes.rows[0].request_count) : 0;
     if (currentCount >= effectiveCap) {
-      return false;
+      return { allowed: false };
     }
     await db.execute({
       sql: `
@@ -3169,10 +3217,10 @@ async function incrementAndCheckDailyUsage(userId, cap) {
       `,
       args: [userId, today]
     });
-    return true;
+    return { allowed: true };
   } catch (err) {
     console.error("[AI Usage] Error updating daily usage:", err);
-    return true;
+    return { allowed: true };
   }
 }
 
@@ -3418,14 +3466,20 @@ async function getAIProvider(userId) {
   if (userId !== void 0) {
     try {
       const db = getDatabase();
-      const row = db.prepare(
-        `SELECT provider, base_url, model, encrypted_api_key
-             FROM user_ai_settings
-            WHERE user_id = ?`
-      ).get(userId);
-      if (row?.encrypted_api_key) {
-        const decryptedKey = decryptApiKey(row.encrypted_api_key);
-        return new OpenAICompatibleProvider(decryptedKey, row.base_url, row.model);
+      const rowRes = await db.execute({
+        sql: `SELECT provider, base_url, model, api_key_enc
+               FROM user_ai_settings
+              WHERE user_id = ?`,
+        args: [userId]
+      });
+      const row = rowRes.rows[0];
+      if (row?.api_key_enc) {
+        const decryptedKey = decryptApiKey(String(row.api_key_enc));
+        return new OpenAICompatibleProvider(
+          decryptedKey,
+          row.base_url ? String(row.base_url) : void 0,
+          row.model ? String(row.model) : void 0
+        );
       }
     } catch (err) {
       console.error("[AI Provider] Failed to load user BYOK settings, falling back:", err);
@@ -3828,6 +3882,23 @@ router10.get("/", async (req, res) => {
     targetId: r.target_id ? String(r.target_id) : void 0
   }));
   res.json({ success: true, data: formatted });
+});
+router10.delete("/:id", async (req, res) => {
+  const db = getDatabase();
+  const id = req.params.id;
+  const existingRes = await db.execute({
+    sql: "SELECT id FROM activities WHERE id = ? AND workspace_id = ?",
+    args: [id, req.user.workspaceId]
+  });
+  if (existingRes.rows.length === 0) {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Activity not found." } });
+    return;
+  }
+  await db.execute({
+    sql: "DELETE FROM activities WHERE id = ? AND workspace_id = ?",
+    args: [id, req.user.workspaceId]
+  });
+  res.json({ success: true, data: { id } });
 });
 var activities_default = router10;
 

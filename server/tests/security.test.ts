@@ -470,6 +470,61 @@ test('Security & Multi-Tenant Isolation Test Suite', async (t) => {
     assert.strictEqual(bmJson.error?.code, 'NOT_FOUND');
   });
 
+  await t.test('F-09 FK Isolation: Cannot assign task to cross-tenant projectId', async () => {
+    // Create a project in User A's workspace
+    const projRes = await fetch(`${BASE_URL}/api/projects`, {
+      method: 'POST',
+      headers: authHeaders(sessionA),
+      body: JSON.stringify({ name: 'Tenant A Project For Task Test' }),
+    });
+    const projJson = await projRes.json();
+    const projId = projJson.data.id;
+
+    // User B tries to create a task referencing User A's projectId
+    const taskRes = await fetch(`${BASE_URL}/api/tasks`, {
+      method: 'POST',
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({
+        title: 'Hijacked Task',
+        projectId: projId,
+      }),
+    });
+    assert.strictEqual(taskRes.status, 404, 'Cross-tenant projectId for task must return 404');
+    const taskJson = await taskRes.json();
+    assert.strictEqual(taskJson.error?.code, 'NOT_FOUND');
+  });
+
+  await t.test('Task creation: Legacy p-1 gracefully falls back to null if not in workspace', async () => {
+    const taskRes = await fetch(`${BASE_URL}/api/tasks`, {
+      method: 'POST',
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({
+        title: 'Task With Legacy p-1',
+        projectId: 'p-1',
+      }),
+    });
+    assert.strictEqual(taskRes.status, 201, 'Legacy p-1 should succeed without 404');
+    const taskJson = await taskRes.json();
+    assert.strictEqual(taskJson.success, true);
+    assert.strictEqual(taskJson.data.title, 'Task With Legacy p-1');
+  });
+
+  await t.test('Task creation: null or omitted projectId succeeds with General Workspace', async () => {
+    const taskRes = await fetch(`${BASE_URL}/api/tasks`, {
+      method: 'POST',
+      headers: authHeaders(sessionB),
+      body: JSON.stringify({
+        title: 'General Workspace Task',
+        projectId: null,
+      }),
+    });
+    assert.strictEqual(taskRes.status, 201);
+    const taskJson = await taskRes.json();
+    assert.strictEqual(taskJson.success, true);
+    assert.strictEqual(taskJson.data.projectId, null);
+    assert.strictEqual(taskJson.data.project, 'General Workspace');
+  });
+
   await t.test('F-08 FTS Search Isolation: FTS index does not leak cross-tenant results', async () => {
     // Create a uniquely titled note in User A's workspace
     const secret = `TOP-SECRET-${Date.now()}`;

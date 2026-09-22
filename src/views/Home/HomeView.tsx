@@ -9,7 +9,8 @@ import {
   FileText, 
   FolderKanban, 
   CheckSquare,
-  Plus
+  Plus,
+  X
 } from 'lucide-react';
 import type { Task, KnowledgeItem, Project, Activity } from '../../data/mockData';
 import { CURRENT_USER } from '../../data/mockData';
@@ -30,6 +31,7 @@ interface HomeViewProps {
   onOpenProject: (id: string) => void;
   onOpenAdd: () => void;
   user?: UserSession;
+  onDeleteActivity?: (id: string) => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -44,6 +46,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenProject,
   onOpenAdd,
   user,
+  onDeleteActivity,
 }) => {
   const pendingTasks = tasks.filter(t => !t.completed);
   const todayTasks = pendingTasks.filter(t => t.dueCategory === 'today');
@@ -212,16 +215,33 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
 
             <div className="activity-feed">
-              {activities.map((act) => (
-                <div key={act.id} className="activity-feed-item">
-                  <div className="activity-indicator" />
-                  <div className="activity-content">
-                    <span className="activity-title">{act.title}</span>
-                    <span className="activity-detail">{act.detail}</span>
-                    <span className="activity-time">{act.timestamp}</span>
+              {activities.length === 0 ? (
+                <div className="empty-subtext">No recent workspace activities</div>
+              ) : (
+                activities.map((act) => (
+                  <div key={act.id} className="activity-feed-item">
+                    <div className="activity-indicator" />
+                    <div className="activity-content">
+                      <span className="activity-title">{act.title}</span>
+                      <span className="activity-detail">{act.detail}</span>
+                      <span className="activity-time">{act.timestamp}</span>
+                    </div>
+                    {onDeleteActivity && (
+                      <button 
+                        className="btn-icon activity-delete-btn" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteActivity(act.id);
+                        }}
+                        title="Remove activity"
+                        aria-label="Remove activity"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -358,6 +378,40 @@ export const HomeView: React.FC<HomeViewProps> = ({
             ))}
           </div>
         </section>
+
+        {/* Mobile Recent Activity Section */}
+        {activities.length > 0 && (
+          <section className="mobile-section" aria-label="Recent Activity">
+            <div className="mobile-section-header">
+              <h2 className="mobile-section-title">Recent Activity</h2>
+            </div>
+            <div className="mobile-activity-list">
+              {activities.slice(0, 6).map((act) => (
+                <div key={act.id} className="mobile-activity-card">
+                  <div className="mobile-activity-dot" />
+                  <div className="mobile-activity-info">
+                    <span className="mobile-act-title">{act.title}</span>
+                    <span className="mobile-act-detail">{act.detail}</span>
+                    <span className="mobile-act-time">{act.timestamp}</span>
+                  </div>
+                  {onDeleteActivity && (
+                    <button 
+                      className="btn-icon mobile-act-del-btn" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteActivity(act.id);
+                      }}
+                      title="Remove activity"
+                      aria-label="Remove activity"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

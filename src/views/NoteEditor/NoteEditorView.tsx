@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Bold, 
   Italic, 
   Heading2, 
   List, 
   ListOrdered, 
+  CheckSquare,
   Code, 
   Quote, 
   Bot, 
@@ -15,7 +16,8 @@ import {
   Copy,
   FileText,
   Mail,
-  ExternalLink
+  ExternalLink,
+  ChevronDown
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
 import './NoteEditorView.css';
@@ -39,8 +41,9 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   const [content, setContent] = useState(note.content || '');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
-  const debounceRef = React.useRef<any>(null);
-  const shareMenuRef = React.useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<any>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Close share menu on outside click or ESC
   useEffect(() => {
@@ -94,10 +97,99 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
     triggerSave(val, content);
   };
 
-  const insertFormatting = (prefix: string, suffix: string = '') => {
-    setContent(prev => prev + `\n${prefix} ` + suffix);
-    showToast('Applied formatting');
+  // Smart Selection-Aware Inline Formatting (e.g. **bold**, *italic*, `code`)
+  const applyFormatting = (prefix: string, suffix: string = '', defaultPlaceholder: string = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      const addition = `\n${prefix}${defaultPlaceholder}${suffix}`;
+      setContent(prev => {
+        const next = prev + addition;
+        triggerSave(title, next);
+        return next;
+      });
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = textarea.value;
+    const selectedText = currentText.slice(start, end);
+
+    let newText = '';
+    let newCursorPos = start + prefix.length;
+
+    if (selectedText.length > 0) {
+      newText = currentText.slice(0, start) + prefix + selectedText + suffix + currentText.slice(end);
+      newCursorPos = start + prefix.length + selectedText.length + suffix.length;
+    } else {
+      const insertion = defaultPlaceholder || '';
+      newText = currentText.slice(0, start) + prefix + insertion + suffix + currentText.slice(end);
+      newCursorPos = start + prefix.length + insertion.length;
+    }
+
+    setContent(newText);
+    triggerSave(title, newText);
+
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    });
   };
+
+  // Smart Selection-Aware Line-Start Formatting (e.g. ## heading, - bullet, - [ ] check)
+  const applyLinePrefix = (prefix: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      const addition = `\n${prefix}`;
+      setContent(prev => {
+        const next = prev + addition;
+        triggerSave(title, next);
+        return next;
+      });
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const currentText = textarea.value;
+    const lineStart = currentText.lastIndexOf('\n', start - 1) + 1;
+    const lineEnd = currentText.indexOf('\n', start);
+    const end = lineEnd === -1 ? currentText.length : lineEnd;
+    const currentLine = currentText.slice(lineStart, end);
+
+    let newLine = '';
+    if (currentLine.startsWith(prefix)) {
+      newLine = currentLine.slice(prefix.length);
+    } else {
+      newLine = prefix + currentLine;
+    }
+
+    const newText = currentText.slice(0, lineStart) + newLine + currentText.slice(end);
+    const diff = newLine.length - currentLine.length;
+    const newCursor = Math.max(lineStart, start + diff);
+
+    setContent(newText);
+    triggerSave(title, newText);
+
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newCursor, newCursor);
+      }
+    });
+  };
+
+  const wordCount = React.useMemo(() => {
+    const trimmed = content.trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).length;
+  }, [content]);
+
+  const readTimeEst = React.useMemo(() => {
+    const minutes = Math.max(1, Math.ceil(wordCount / 200));
+    return `${minutes} min read`;
+  }, [wordCount]);
 
   return (
     <div className="note-editor-wrapper">
@@ -111,12 +203,12 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
             {saveStatus === 'saved' ? (
               <>
                 <Check size={13} className="saved-check" />
-                <span>Saved just now</span>
+                <span>Saved</span>
               </>
             ) : (
               <>
                 <Clock size={13} className="saving-spinner" />
-                <span>Saving changes...</span>
+                <span>Saving...</span>
               </>
             )}
           </div>
@@ -124,26 +216,69 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
 
         {/* Desktop Formatting Toolbar */}
         <div className="editor-desktop-toolbar">
-          <button className="toolbar-btn" onClick={() => insertFormatting('**', '**')} title="Bold">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyFormatting('**', '**', 'bold text'); }} 
+            title="Bold"
+          >
             <Bold size={15} />
           </button>
-          <button className="toolbar-btn" onClick={() => insertFormatting('*', '*')} title="Italic">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyFormatting('*', '*', 'italic text'); }} 
+            title="Italic"
+          >
             <Italic size={15} />
           </button>
           <span className="toolbar-divider" />
-          <button className="toolbar-btn" onClick={() => insertFormatting('## ')} title="Heading 2">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('## '); }} 
+            title="Heading 2"
+          >
             <Heading2 size={15} />
           </button>
-          <button className="toolbar-btn" onClick={() => insertFormatting('- ')} title="Bullet list">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('- '); }} 
+            title="Bullet list"
+          >
             <List size={15} />
           </button>
-          <button className="toolbar-btn" onClick={() => insertFormatting('1. ')} title="Numbered list">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('- [ ] '); }} 
+            title="Checklist item"
+          >
+            <CheckSquare size={15} />
+          </button>
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('1. '); }} 
+            title="Numbered list"
+          >
             <ListOrdered size={15} />
           </button>
-          <button className="toolbar-btn" onClick={() => insertFormatting('```\n', '\n```')} title="Code block">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyFormatting('```\n', '\n```', 'code'); }} 
+            title="Code block"
+          >
             <Code size={15} />
           </button>
-          <button className="toolbar-btn" onClick={() => insertFormatting('> ')} title="Quote">
+          <button 
+            type="button"
+            className="toolbar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('> '); }} 
+            title="Quote"
+          >
             <Quote size={15} />
           </button>
         </div>
@@ -255,45 +390,114 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
 
           {/* Note Metadata Strip */}
           <div className="note-canvas-metadata">
-            <span>Last edited 2 minutes ago</span>
+            <span>{wordCount} words</span>
             <span className="meta-sep">•</span>
-            <span>{note.tags.join(', ')}</span>
-            <span className="meta-sep">•</span>
-            <span>{note.readTime}</span>
+            <span>{readTimeEst}</span>
+            {note.tags && note.tags.length > 0 && (
+              <>
+                <span className="meta-sep">•</span>
+                <span>{note.tags.join(', ')}</span>
+              </>
+            )}
           </div>
 
-          {/* Note Content Textarea */}
+          {/* Note Content Textarea with Selection Ref */}
           <textarea
+            ref={textareaRef}
             className="note-canvas-content"
             value={content}
             onChange={handleContentChange}
-            placeholder="Type your notes, markdown, specs, or thoughts here..."
+            placeholder="Write your note in markdown... Select text and tap the formatting toolbar below."
             rows={22}
           />
         </main>
       </div>
 
-      {/* Mobile Bottom Formatting Bar (Sleek, minimal, doesn't eat screen) */}
+      {/* Mobile Bottom Formatting Bar (Horizontally scrollable, touch-friendly, safe keyboard behavior) */}
       <div className="note-mobile-bottom-bar">
-        <button className="mobile-bar-btn" onClick={() => insertFormatting('## ')}>
-          <Heading2 size={16} />
-        </button>
-        <button className="mobile-bar-btn" onClick={() => insertFormatting('**', '**')}>
-          <Bold size={16} />
-        </button>
-        <button className="mobile-bar-btn" onClick={() => insertFormatting('- ')}>
-          <List size={16} />
-        </button>
-        <button className="mobile-bar-btn" onClick={() => insertFormatting('```\n', '\n```')}>
-          <Code size={16} />
-        </button>
-        <button 
-          className="mobile-bar-btn mobile-ai-pill" 
-          onClick={() => onAskAIAboutNote(title)}
-        >
-          <Bot size={14} />
-          <span>AI</span>
-        </button>
+        <div className="mobile-bar-scroll">
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('## '); }}
+            title="Heading 2"
+          >
+            <Heading2 size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyFormatting('**', '**', 'bold'); }}
+            title="Bold"
+          >
+            <Bold size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyFormatting('*', '*', 'italic'); }}
+            title="Italic"
+          >
+            <Italic size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('- '); }}
+            title="Bullet list"
+          >
+            <List size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('- [ ] '); }}
+            title="Checklist"
+          >
+            <CheckSquare size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('1. '); }}
+            title="Numbered list"
+          >
+            <ListOrdered size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyFormatting('`', '`', 'code'); }}
+            title="Code"
+          >
+            <Code size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn" 
+            onMouseDown={(e) => { e.preventDefault(); applyLinePrefix('> '); }}
+            title="Quote"
+          >
+            <Quote size={16} />
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn mobile-ai-pill" 
+            onClick={() => onAskAIAboutNote(title)}
+            title="Ask AI about this note"
+          >
+            <Bot size={13} />
+            <span>AI</span>
+          </button>
+          <button 
+            type="button"
+            className="mobile-bar-btn mobile-dismiss-btn" 
+            onClick={() => textareaRef.current?.blur()}
+            title="Hide keyboard"
+          >
+            <ChevronDown size={16} />
+          </button>
+        </div>
       </div>
     </div>
   );
