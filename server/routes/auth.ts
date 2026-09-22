@@ -286,58 +286,66 @@ router.post('/logout-all', requireAuth, async (req: AuthenticatedRequest, res: R
 
 // Me (Current Session User)
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const db = getDatabase();
-  const userRes = await db.execute({
-    sql: `
-      SELECT u.id, u.email, u.name, u.avatar_url, u.role, p.theme, p.timezone, w.id as workspace_id, w.name as workspace_name
-      FROM users u
-      LEFT JOIN profiles p ON u.id = p.user_id
-      LEFT JOIN workspaces w ON u.id = w.user_id
-      WHERE u.id = ?
-      LIMIT 1
-    `,
-    args: [req.user!.userId],
-  });
-  const user = userRes.rows[0] as any;
-
-  if (!user) {
-    res.status(404).json({
-      success: false,
-      error: { code: 'USER_NOT_FOUND', message: 'User record not found.' },
+  try {
+    const db = getDatabase();
+    const userRes = await db.execute({
+      sql: `
+        SELECT u.id, u.email, u.name, u.avatar_url, u.role, p.theme, p.timezone, w.id as workspace_id, w.name as workspace_name
+        FROM users u
+        LEFT JOIN profiles p ON u.id = p.user_id
+        LEFT JOIN workspaces w ON u.id = w.user_id
+        WHERE u.id = ?
+        LIMIT 1
+      `,
+      args: [req.user!.userId],
     });
-    return;
+    const user = userRes.rows[0] as any;
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User record not found.' },
+      });
+      return;
+    }
+
+    // Ensure CSRF cookie is fresh
+    const csrfToken = req.cookies?.csrf || req.cookies?.myspace_csrf || crypto.randomBytes(24).toString('hex');
+    res.cookie('csrf', csrfToken, {
+      httpOnly: false,
+      secure: config.env === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+    res.cookie('myspace_csrf', csrfToken, {
+      httpOnly: false,
+      secure: config.env === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        id: String(user.id),
+        email: String(user.email),
+        name: String(user.name),
+        avatar: user.avatar_url ? String(user.avatar_url) : undefined,
+        role: String(user.role),
+        theme: user.theme ? String(user.theme) : 'dark',
+        timezone: user.timezone ? String(user.timezone) : 'UTC',
+        workspaceId: user.workspace_id ? String(user.workspace_id) : undefined,
+        workspaceName: user.workspace_name ? String(user.workspace_name) : undefined,
+        csrfToken,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Auth] Error in /me:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Failed to fetch user session.' },
+    });
   }
-
-  // Ensure CSRF cookie is fresh
-  const csrfToken = req.cookies?.csrf || req.cookies?.myspace_csrf || crypto.randomBytes(24).toString('hex');
-  res.cookie('csrf', csrfToken, {
-    httpOnly: false,
-    secure: config.env === 'production',
-    sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-  });
-  res.cookie('myspace_csrf', csrfToken, {
-    httpOnly: false,
-    secure: config.env === 'production',
-    sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-  });
-
-  res.json({
-    success: true,
-    data: {
-      id: String(user.id),
-      email: String(user.email),
-      name: String(user.name),
-      avatar: user.avatar_url ? String(user.avatar_url) : undefined,
-      role: String(user.role),
-      theme: user.theme ? String(user.theme) : 'dark',
-      timezone: user.timezone ? String(user.timezone) : 'UTC',
-      workspaceId: user.workspace_id ? String(user.workspace_id) : undefined,
-      workspaceName: user.workspace_name ? String(user.workspace_name) : undefined,
-      csrfToken,
-    },
-  });
 });
 
 // Update Profile
