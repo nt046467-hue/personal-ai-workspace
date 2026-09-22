@@ -74,6 +74,30 @@ export function createApp(): express.Application {
   // Double-submit CSRF Protection on mutating requests
   app.use(csrfProtection);
 
+  // Health check — responds immediately without waiting for database
+  app.get(['/api/health', '/health'], (_req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
+
+  // Serverless-safe Database Initialization Middleware:
+  // Guarantees database connection and schema migrations are ready before any database route executes.
+  // Cached promise and migrationsRan flag ensure warm invocations resolve in 0ms.
+  app.use(async (_req, res, next) => {
+    try {
+      await initDatabase();
+      next();
+    } catch (err: any) {
+      console.error('[App] Database initialization error on request:', err?.message || err);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'DATABASE_INIT_ERROR',
+          message: 'Database initialization failed. Please verify Turso database credentials and connectivity.',
+        },
+      });
+    }
+  });
+
   // API Routes (Mounted with /api prefix and fallback without /api for Vercel Serverless Function rewrites)
   app.use(['/api/auth', '/auth'], authRouter);
   app.use(['/api/knowledge', '/knowledge'], knowledgeRouter);
@@ -86,11 +110,6 @@ export function createApp(): express.Application {
   app.use(['/api/ai', '/ai'], aiRouter);
   app.use(['/api/activities', '/activities'], activitiesRouter);
   app.use(['/api/settings', '/settings'], settingsRouter);
-
-  // Health check
-  app.get(['/api/health', '/health'], (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
-  });
 
   // Global error handler — never leak internal details in production
   app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
