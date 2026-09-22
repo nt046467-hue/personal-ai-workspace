@@ -11,7 +11,11 @@ import {
   Check, 
   Clock, 
   ArrowLeft,
-  Share2
+  Share2,
+  Copy,
+  FileText,
+  Mail,
+  ExternalLink
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
 import './NoteEditorView.css';
@@ -20,7 +24,7 @@ interface NoteEditorViewProps {
   note: KnowledgeItem;
   onBack: () => void;
   onAskAIAboutNote: (noteTitle: string) => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   onSaveNote?: (id: string, updates: { title?: string; content?: string }) => void;
 }
 
@@ -34,7 +38,28 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content || '');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const debounceRef = React.useRef<any>(null);
+  const shareMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close share menu on outside click or ESC
+  useEffect(() => {
+    if (!shareMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShareMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShareMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [shareMenuOpen]);
 
   // Sync state if active note changes
   useEffect(() => {
@@ -132,16 +157,87 @@ export const NoteEditorView: React.FC<NoteEditorViewProps> = ({
             <Bot size={14} className="accent-glyph" />
             <span className="btn-label-desktop">Ask AI</span>
           </button>
-          <button 
-            className="btn-icon"
-            onClick={() => {
-              navigator.clipboard?.writeText(window.location.href);
-              showToast('Link copied to clipboard');
-            }}
-            title="Share"
-          >
-            <Share2 size={16} />
-          </button>
+          <div className="share-menu-container" ref={shareMenuRef} style={{ position: 'relative' }}>
+            <button 
+              className={`btn-icon ${shareMenuOpen ? 'active' : ''}`}
+              onClick={() => setShareMenuOpen(prev => !prev)}
+              title="Share Note"
+              aria-label="Share Note"
+              aria-expanded={shareMenuOpen}
+            >
+              <Share2 size={16} />
+            </button>
+
+            {shareMenuOpen && (
+              <div className="share-dropdown-menu" role="menu">
+                {typeof navigator !== 'undefined' && 'share' in navigator && (
+                  <button 
+                    className="share-dropdown-item"
+                    role="menuitem"
+                    onClick={async () => {
+                      setShareMenuOpen(false);
+                      try {
+                        await navigator.share({
+                          title: title || 'Workspace Note',
+                          text: content.slice(0, 160),
+                          url: window.location.href,
+                        });
+                        showToast('Shared successfully', 'success');
+                      } catch (err: any) {
+                        if (err.name !== 'AbortError') {
+                          showToast('Failed to open system share', 'error');
+                        }
+                      }
+                    }}
+                  >
+                    <ExternalLink size={14} />
+                    <span>Share via Device Apps…</span>
+                  </button>
+                )}
+
+                <button 
+                  className="share-dropdown-item"
+                  role="menuitem"
+                  onClick={async () => {
+                    setShareMenuOpen(false);
+                    await navigator.clipboard?.writeText(window.location.href);
+                    showToast('Note link copied to clipboard', 'success');
+                  }}
+                >
+                  <Copy size={14} />
+                  <span>Copy Note Link</span>
+                </button>
+
+                <button 
+                  className="share-dropdown-item"
+                  role="menuitem"
+                  onClick={async () => {
+                    setShareMenuOpen(false);
+                    const fullText = `# ${title}\n\n${content}`;
+                    await navigator.clipboard?.writeText(fullText);
+                    showToast('Full note markdown copied to clipboard', 'success');
+                  }}
+                >
+                  <FileText size={14} />
+                  <span>Copy Note Content</span>
+                </button>
+
+                <button 
+                  className="share-dropdown-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenuOpen(false);
+                    const subject = encodeURIComponent(title || 'Workspace Note');
+                    const body = encodeURIComponent(`${title}\n\n${content}\n\nLink: ${window.location.href}`);
+                    window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+                  }}
+                >
+                  <Mail size={14} />
+                  <span>Share via Email</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -10,6 +10,7 @@ interface MobileMoreDrawerProps {
   onNavigate: (tab: NavigationTab) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  onOpenProfile?: () => void;
 }
 
 export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
@@ -18,6 +19,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
   onNavigate,
   theme,
   onToggleTheme,
+  onOpenProfile,
 }) => {
   if (!isOpen) return null;
 
@@ -35,7 +37,16 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
         </div>
 
         {/* User Card */}
-        <div className="more-user-card">
+        <div 
+          className="more-user-card"
+          style={{ cursor: onOpenProfile ? 'pointer' : 'default' }}
+          onClick={() => {
+            if (onOpenProfile) {
+              onClose();
+              onOpenProfile();
+            }
+          }}
+        >
           <div className="more-user-avatar">
             {CURRENT_USER.avatar}
           </div>
@@ -43,7 +54,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
             <span className="more-user-name">{CURRENT_USER.name}</span>
             <span className="more-user-email">{CURRENT_USER.email}</span>
           </div>
-          <button className="btn-icon" onClick={onClose} aria-label="Close menu">
+          <button className="btn-icon" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close menu">
             <X size={18} />
           </button>
         </div>

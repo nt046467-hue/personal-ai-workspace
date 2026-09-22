@@ -37,6 +37,7 @@
     "react-markdown": "^10.1.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
+    "resend": "^6.28.1",
     "tsx": "^4.23.13",
     "zod": "^4.6.5"
   },

@@ -17,7 +17,9 @@ import { CURRENT_USER } from '../../data/mockData';
 import type { UserSession } from '../../services/api';
 import './DesktopSidebar.css';
 
-export type NavigationTab = 'home' | 'knowledge' | 'tasks' | 'projects' | 'ai' | 'settings' | 'note-editor' | 'doc-viewer' | 'project-detail';
+import type { KnowledgeItem } from '../../data/mockData';
+
+export type NavigationTab = 'home' | 'knowledge' | 'tasks' | 'projects' | 'ai' | 'settings' | 'profile' | 'note-editor' | 'doc-viewer' | 'project-detail';
 
 interface DesktopSidebarProps {
   currentTab: NavigationTab;
@@ -29,6 +31,10 @@ interface DesktopSidebarProps {
   pendingTasksCount: number;
   user?: UserSession;
   onOpenAuth?: () => void;
+  onOpenProfile?: () => void;
+  pinnedItems?: KnowledgeItem[];
+  onOpenNote?: (id: string) => void;
+  onOpenDoc?: (id: string) => void;
 }
 
 export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
@@ -41,6 +47,10 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   pendingTasksCount,
   user,
   onOpenAuth,
+  onOpenProfile,
+  pinnedItems = [],
+  onOpenNote,
+  onOpenDoc,
 }) => {
   const activeUser = user || CURRENT_USER;
   return (
@@ -146,22 +156,29 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
             <span className="nav-group-label">
               <Pin size={11} style={{ marginRight: 4 }} /> Pinned & Focus
             </span>
-            <button 
-              className="nav-subitem" 
-              onClick={() => onSelectTab('note-editor')}
-              title="Firebase Security Architecture"
-            >
-              <FileText size={14} className="subitem-icon" />
-              <span className="subitem-text">Firebase Security Rules</span>
-            </button>
-            <button 
-              className="nav-subitem" 
-              onClick={() => onSelectTab('doc-viewer')}
-              title="Event-Driven Architecture Spec"
-            >
-              <FileText size={14} className="subitem-icon" />
-              <span className="subitem-text">Architecture Spec.pdf</span>
-            </button>
+            {pinnedItems.length > 0 ? (
+              pinnedItems.slice(0, 5).map((item) => (
+                <button 
+                  key={item.id}
+                  className="nav-subitem" 
+                  onClick={() => {
+                    if (item.type === 'document') {
+                      onOpenDoc ? onOpenDoc(item.id) : onSelectTab('doc-viewer');
+                    } else {
+                      onOpenNote ? onOpenNote(item.id) : onSelectTab('note-editor');
+                    }
+                  }}
+                  title={item.title}
+                >
+                  <FileText size={14} className="subitem-icon" />
+                  <span className="subitem-text">{item.title}</span>
+                </button>
+              ))
+            ) : (
+              <div className="sidebar-empty-hint">
+                <span>No pinned items yet</span>
+              </div>
+            )}
           </div>
         )}
       </nav>
@@ -187,15 +204,33 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
         </button>
 
         <div 
-          className="user-profile-strip" 
-          onClick={onOpenAuth}
+          className="user-profile-strip"
+          onClick={() => {
+            if (user) {
+              if (onOpenProfile) {
+                onOpenProfile();
+              } else {
+                onSelectTab('settings');
+              }
+            } else {
+              onOpenAuth?.();
+            }
+          }}
           role="button"
           tabIndex={0}
-          title="Account Profile & Workspace Login"
+          title={user ? "View My Profile" : "Sign in to workspace"}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onOpenAuth?.();
+              if (user) {
+                if (onOpenProfile) {
+                  onOpenProfile();
+                } else {
+                  onSelectTab('settings');
+                }
+              } else {
+                onOpenAuth?.();
+              }
             }
           }}
         >

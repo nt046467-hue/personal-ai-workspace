@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Bot, 
   Send, 
   ArrowLeft, 
   Download, 
   Share2, 
+  Copy,
+  ExternalLink,
+  Mail,
   X
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
@@ -24,6 +27,28 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
   showToast,
 }) => {
   const [mobileAISheetOpen, setMobileAISheetOpen] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close share menu on outside click or ESC
+  useEffect(() => {
+    if (!shareMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShareMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShareMenuOpen(false);
+    };
+    const globalDoc = window.document;
+    globalDoc.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      globalDoc.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [shareMenuOpen]);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'assistant'; text: string; time: string }>>([
     {
@@ -119,15 +144,73 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
             <Download size={14} />
             <span className="hide-mobile">Export</span>
           </button>
-          <button 
-            className="btn-icon"
-            onClick={() => {
-              navigator.clipboard?.writeText(window.location.href);
-              showToast('Document link copied');
-            }}
-          >
-            <Share2 size={16} />
-          </button>
+          <div className="share-menu-container" ref={shareMenuRef} style={{ position: 'relative' }}>
+            <button 
+              className={`btn-icon ${shareMenuOpen ? 'active' : ''}`}
+              onClick={() => setShareMenuOpen(prev => !prev)}
+              title="Share Document"
+              aria-label="Share Document"
+              aria-expanded={shareMenuOpen}
+            >
+              <Share2 size={16} />
+            </button>
+
+            {shareMenuOpen && (
+              <div className="share-dropdown-menu" role="menu">
+                {typeof navigator !== 'undefined' && 'share' in navigator && (
+                  <button 
+                    className="share-dropdown-item"
+                    role="menuitem"
+                    onClick={async () => {
+                      setShareMenuOpen(false);
+                      try {
+                        await navigator.share({
+                          title: document.title || 'Workspace Document',
+                          text: document.excerpt || document.title,
+                          url: window.location.href,
+                        });
+                        showToast('Shared successfully', 'success');
+                      } catch (err: any) {
+                        if (err.name !== 'AbortError') {
+                          showToast('Failed to open system share', 'error');
+                        }
+                      }
+                    }}
+                  >
+                    <ExternalLink size={14} />
+                    <span>Share via Device Apps…</span>
+                  </button>
+                )}
+
+                <button 
+                  className="share-dropdown-item"
+                  role="menuitem"
+                  onClick={async () => {
+                    setShareMenuOpen(false);
+                    await navigator.clipboard?.writeText(window.location.href);
+                    showToast('Document link copied to clipboard', 'success');
+                  }}
+                >
+                  <Copy size={14} />
+                  <span>Copy Document Link</span>
+                </button>
+
+                <button 
+                  className="share-dropdown-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenuOpen(false);
+                    const subject = encodeURIComponent(`Document: ${document.title}`);
+                    const body = encodeURIComponent(`Document: ${document.title}\n\nLink: ${window.location.href}`);
+                    window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+                  }}
+                >
+                  <Mail size={14} />
+                  <span>Share via Email</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

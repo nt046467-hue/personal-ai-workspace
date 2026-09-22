@@ -15,6 +15,7 @@ import {
   Check
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
+import { formatTimeAgo } from '../../utils/time';
 import './KnowledgeView.css';
 
 interface KnowledgeViewProps {
@@ -24,6 +25,7 @@ interface KnowledgeViewProps {
   onNewNote: () => void;
   onDeleteNote?: (id: string) => void;
   onAskAI?: (item: KnowledgeItem) => void;
+  onTogglePin?: (id: string) => void;
 }
 
 export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
@@ -33,6 +35,7 @@ export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
   onNewNote,
   onDeleteNote,
   onAskAI,
+  onTogglePin,
 }) => {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [filterType, setFilterType] = useState<string>('all');
@@ -168,7 +171,7 @@ export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
 
               <div className="row-meta-col">
                 <span className="meta-read-time">{item.readTime}</span>
-                <span className="meta-updated">{item.updatedAt}</span>
+                <span className="meta-updated">{formatTimeAgo(item.updatedAt)}</span>
               </div>
 
               <div className="row-actions-col">
@@ -211,6 +214,19 @@ export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
                       >
                         <Sparkles size={13} />
                         <span>Ask AI about this</span>
+                      </button>
+                    )}
+
+                    {onTogglePin && (
+                      <button 
+                        className="dropdown-item"
+                        onClick={() => {
+                          setActiveMenuId(null);
+                          onTogglePin(item.id);
+                        }}
+                      >
+                        <Pin size={13} />
+                        <span>{item.pinned ? 'Unpin from Sidebar' : 'Pin to Sidebar'}</span>
                       </button>
                     )}
 
@@ -276,7 +292,7 @@ export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
                   ))}
                   {item.tags.length > 2 && <span className="knowledge-tag-more">+{item.tags.length - 2}</span>}
                 </div>
-                <span className="grid-updated-time">{item.updatedAt}</span>
+                <span className="grid-updated-time">{formatTimeAgo(item.updatedAt)}</span>
               </div>
             </div>
           ))}

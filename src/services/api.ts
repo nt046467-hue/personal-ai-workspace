@@ -62,15 +62,23 @@ class ApiService {
       credentials: 'include', // Always send HttpOnly session cookie
     });
 
-    if (res.status === 401) {
-      // Session expired or revoked — trigger re-authentication
+    const isAuthEndpoint = endpoint.startsWith('/auth/');
+
+    if (res.status === 401 && !isAuthEndpoint) {
+      // Session expired or revoked on protected resource — trigger re-authentication
       window.dispatchEvent(new CustomEvent('myspace:session-expired'));
-      throw new Error('Session expired. Please log in again.');
     }
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || `Request failed with status ${res.status}`);
+      const defaultMsg = res.status === 401 && !isAuthEndpoint
+        ? 'Session expired. Please log in again.'
+        : `Request failed with status ${res.status}`;
+      const err: any = new Error(json.error?.message || json.message || defaultMsg);
+      err.code = json.error?.code || json.code;
+      err.fields = json.error?.fields || json.fields;
+      err.status = res.status;
+      throw err;
     }
 
     return json.data;
@@ -93,6 +101,40 @@ class ApiService {
     });
     if (data.csrfToken) this.setCsrfToken(data.csrfToken);
     return { user: { ...data.user, csrfToken: data.csrfToken } };
+  }
+
+  public async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+      credentials: 'include',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.success) {
+      const err: any = new Error(json.error?.message || json.message || 'Failed to request password reset.');
+      err.code = json.error?.code || json.code;
+      err.fields = json.error?.fields || json.fields;
+      throw err;
+    }
+    return { success: true, message: json.message || "If that email exists, we've sent a reset link." };
+  }
+
+  public async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+      credentials: 'include',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.success) {
+      const err: any = new Error(json.error?.message || json.message || 'Failed to reset password.');
+      err.code = json.error?.code || json.code;
+      err.fields = json.error?.fields || json.fields;
+      throw err;
+    }
+    return { success: true, message: json.message || 'Password updated successfully.' };
   }
 
   public async getMe(): Promise<UserSession> {

@@ -209,3 +209,68 @@
     font-weight: var(--fw-medium);
   }
 }
+
+/* --------------------------------------------------------------------------
+   Share Dropdown Menu
+   -------------------------------------------------------------------------- */
+.share-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 210px;
+  background-color: var(--bg-surface-elevated, #16192b);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.25);
+  padding: 6px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: shareDropdownFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shareDropdownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.share-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md, 6px);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-fast, 0.15s) ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.share-dropdown-item:hover {
+  background-color: var(--bg-surface-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary);
+}
+
+.share-dropdown-item svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.share-dropdown-item:hover svg {
+  color: hsl(225, 85%, 65%);
+}

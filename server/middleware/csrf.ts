@@ -1,7 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/signup', '/api/health']);
+const CSRF_EXEMPT_PATHS = new Set([
+  '/api/auth/login',
+  '/auth/login',
+  '/api/auth/signup',
+  '/auth/signup',
+  '/api/auth/forgot-password',
+  '/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/auth/reset-password',
+  '/api/health',
+  '/health',
+]);
 
 export function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   if (!MUTATING_METHODS.has(req.method.toUpperCase())) {

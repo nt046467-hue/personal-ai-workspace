@@ -363,3 +363,71 @@
     transform: scale(1);
   }
 }
+
+/* ── Forgot Password specific styles ─────────────────────────────────────── */
+
+.auth-password-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.auth-password-label-row label {
+  margin-bottom: 0;
+}
+
+.auth-forgot-link {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: color var(--trans-fast);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.auth-forgot-link:hover {
+  color: var(--accent-cyan);
+  text-decoration: underline;
+}
+
+.auth-forgot-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+.auth-forgot-success-icon {
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(16, 185, 129, 0.15));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-success, #10b981);
+  animation: modalScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-forgot-success-msg {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  max-width: 300px;
+}
+
+.auth-forgot-success .auth-submit-btn {
+  margin-top: 4px;
+  gap: 6px;
+}

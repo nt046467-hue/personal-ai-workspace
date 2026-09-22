@@ -1,0 +1,349 @@
+/* ==========================================================================
+   Profile View — Clean card matching New Task dialog style
+   ========================================================================== */
+
+.profile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(8, 10, 20, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: profileOverlayFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  overflow-y: auto;
+}
+
+@keyframes profileOverlayFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Card
+   -------------------------------------------------------------------------- */
+.profile-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-card, #16192b);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-2xl, 20px);
+  box-shadow:
+    0 24px 60px -12px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 40px rgba(99, 102, 241, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  margin: auto;
+  animation: profileCardPop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes profileCardPop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Header
+   -------------------------------------------------------------------------- */
+.profile-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6);
+}
+
+.profile-card-title {
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.profile-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  transition: all var(--duration-fast) ease;
+}
+
+.profile-close-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------------------
+   Subtitle
+   -------------------------------------------------------------------------- */
+.profile-card-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  padding: 0 var(--space-6) var(--space-4);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Avatar Hero
+   -------------------------------------------------------------------------- */
+.profile-avatar-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: var(--bg-surface, rgba(255,255,255,0.03));
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profile-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, hsl(240, 70%, 42%), hsl(270, 70%, 58%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: var(--fw-bold);
+  color: #fff;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+  border: 2px solid hsl(260, 60%, 55%, 0.35);
+}
+
+.profile-avatar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.profile-avatar-name {
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.profile-avatar-email {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Stats Bar
+   -------------------------------------------------------------------------- */
+.profile-stats-bar {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface, rgba(255,255,255,0.02));
+}
+
+.profile-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.profile-stat-val {
+  font-size: var(--text-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.profile-stat-lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+
+.profile-stat-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border-subtle);
+}
+
+/* --------------------------------------------------------------------------
+   Form
+   -------------------------------------------------------------------------- */
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+}
+
+.profile-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-field-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.profile-field-input {
+  height: 40px;
+  background: var(--bg-surface, rgba(255,255,255,0.05));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+  outline: none;
+  font-family: inherit;
+  width: 100%;
+}
+
+.profile-field-input:focus:not(.profile-field-readonly) {
+  border-color: hsl(220, 80%, 62%);
+  box-shadow: 0 0 0 3px hsl(220, 80%, 62%, 0.15);
+}
+
+.profile-field-input::placeholder {
+  color: var(--text-muted);
+}
+
+.profile-field-readonly {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.profile-field-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+.profile-card-footer {
+  display: flex;
+  align-items: center;
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-3);
+}
+
+.profile-footer-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.profile-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  transition: all var(--duration-fast) ease;
+  white-space: nowrap;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Cancel */
+.profile-btn-cancel {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+.profile-btn-cancel:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+/* Save Changes — matches "Create Task" gradient */
+.profile-btn-save {
+  background: linear-gradient(135deg, hsl(248, 85%, 62%), hsl(220, 85%, 58%));
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 12px hsl(240, 80%, 55%, 0.35);
+}
+.profile-btn-save:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 18px hsl(240, 80%, 55%, 0.5);
+  transform: translateY(-1px);
+}
+.profile-btn-save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Sign Out */
+.profile-btn-danger {
+  background: transparent;
+  color: hsl(0, 70%, 62%);
+  border: 1px solid hsl(0, 70%, 50%, 0.25);
+}
+.profile-btn-danger:hover {
+  background: hsl(0, 70%, 50%, 0.1);
+  border-color: hsl(0, 70%, 50%, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   Mobile
+   -------------------------------------------------------------------------- */
+@media (max-width: 520px) {
+  .profile-overlay {
+    padding: var(--space-3);
+    align-items: flex-start;
+  }
+
+  .profile-card-footer {
+    flex-wrap: wrap;
+  }
+
+  .profile-footer-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .profile-btn-save {
+    flex: 1;
+    justify-content: center;
+  }
+}

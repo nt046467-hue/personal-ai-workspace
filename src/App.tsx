@@ -12,6 +12,7 @@ import { CommandPalette } from './components/CommandPalette/CommandPalette';
 import { ToastContainer } from './components/Toast/Toast';
 import type { ToastMessage } from './components/Toast/Toast';
 import { AuthModal } from './components/Auth/AuthModal';
+import { ResetPasswordView } from './views/ResetPassword/ResetPasswordView';
 
 import { HomeView } from './views/Home/HomeView';
 import { KnowledgeView } from './views/Knowledge/KnowledgeView';
@@ -21,6 +22,7 @@ import { AIAssistantView } from './views/AIAssistant/AIAssistantView';
 import { TasksView } from './views/Tasks/TasksView';
 import { ProjectsView } from './views/Projects/ProjectsView';
 import { SettingsView } from './views/Settings/SettingsView';
+import { ProfileView } from './views/Profile/ProfileView';
 
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { useVisualViewportHeight } from './hooks/useVisualViewportHeight';
@@ -37,16 +39,47 @@ import { api } from './services/api';
 import type { UserSession } from './services/api';
 import './styles/app.css';
 
+const VALID_TABS: NavigationTab[] = ['home', 'knowledge', 'tasks', 'projects', 'ai', 'settings', 'note-editor', 'doc-viewer', 'project-detail'];
+
+function getTabFromUrl(): NavigationTab {
+  if (typeof window === 'undefined') return 'home';
+  const path = window.location.pathname.replace(/^\/+/, '').split('/')[0] || '';
+  if (VALID_TABS.includes(path as NavigationTab)) {
+    return path as NavigationTab;
+  }
+  const hash = window.location.hash.replace(/^#\/?/, '').split('/')[0] || '';
+  if (VALID_TABS.includes(hash as NavigationTab)) {
+    return hash as NavigationTab;
+  }
+  return 'home';
+}
+
 export const App: React.FC = () => {
   // Mobile breakpoint & iOS viewport height management
   const isMobile = useMediaQuery('(max-width: 820px)');
   useVisualViewportHeight();
 
-  // Navigation & View State
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
+  // Navigation & View State (persists across page refresh via URL)
+  const [currentTab, setCurrentTab] = useState<NavigationTab>(getTabFromUrl);
   const [selectedNoteId, setSelectedNoteId] = useState<string>('k-1');
   const [selectedDocId, setSelectedDocId] = useState<string>('k-2');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+
+  const handleSelectTab = useCallback((tab: NavigationTab) => {
+    setCurrentTab(tab);
+    const targetPath = tab === 'home' ? '/' : `/${tab}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setCurrentTab(getTabFromUrl());
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // App Shell States
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -59,6 +92,7 @@ export const App: React.FC = () => {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // User Session — null until authenticated
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
@@ -160,7 +194,7 @@ export const App: React.FC = () => {
     // Handle session expiry from api service
     const onExpired = () => {
       setCurrentUser(null);
-      setAuthModalOpen(true);
+      setAuthModalOpen(false);
     };
     window.addEventListener('myspace:session-expired', onExpired);
     return () => window.removeEventListener('myspace:session-expired', onExpired);
@@ -221,20 +255,36 @@ export const App: React.FC = () => {
     }
   };
 
+  // Real Pinned items for Sidebar & Quick Access
+  const pinnedItems = React.useMemo(() => knowledge.filter(k => k.pinned), [knowledge]);
+
+  const handleTogglePin = async (id: string) => {
+    const item = knowledge.find(k => k.id === id);
+    if (!item) return;
+    const newPinned = !item.pinned;
+    setKnowledge(prev => prev.map(k => k.id === id ? { ...k, pinned: newPinned } : k));
+    showToast(newPinned ? `Pinned "${item.title}" to sidebar` : `Unpinned "${item.title}"`);
+    try {
+      await api.updateKnowledgeItem(id, { pinned: newPinned } as any);
+    } catch {
+      // Non-fatal, state updated locally
+    }
+  };
+
   // Navigation Helpers
   const handleOpenNote = (id: string) => {
     setSelectedNoteId(id);
-    setCurrentTab('note-editor');
+    handleSelectTab('note-editor');
   };
 
   const handleOpenDoc = (id: string) => {
     setSelectedDocId(id);
-    setCurrentTab('doc-viewer');
+    handleSelectTab('doc-viewer');
   };
 
   const handleOpenProject = (id: string | null) => {
     setSelectedProjectId(id);
-    setCurrentTab(id ? 'project-detail' : 'projects');
+    handleSelectTab(id ? 'project-detail' : 'projects');
   };
 
   // Note Autosave Handler
@@ -442,11 +492,12 @@ export const App: React.FC = () => {
             knowledge={knowledge}
             projects={projects}
             activities={activities}
-            onNavigate={setCurrentTab}
+            onNavigate={handleSelectTab}
             onOpenNote={handleOpenNote}
             onOpenDoc={handleOpenDoc}
             onOpenProject={handleOpenProject}
             onOpenAdd={() => setAddSheetOpen(true)}
+            user={currentUser ?? undefined}
           />
         );
 
@@ -459,9 +510,10 @@ export const App: React.FC = () => {
             onNewNote={() => handleSelectAddAction('note')}
             onDeleteNote={handleDeleteKnowledge}
             onAskAI={(item) => {
-              setCurrentTab('ai');
+              handleSelectTab('ai');
               handleSendAIMessage(`Summarize key points and details from: "${item.title}"`);
             }}
+            onTogglePin={handleTogglePin}
           />
         );
 
@@ -469,9 +521,9 @@ export const App: React.FC = () => {
         return (
           <NoteEditorView
             note={activeNote}
-            onBack={() => setCurrentTab('knowledge')}
+            onBack={() => handleSelectTab('knowledge')}
             onAskAIAboutNote={(title) => {
-              setCurrentTab('ai');
+              handleSelectTab('ai');
               handleSendAIMessage(`Summarize key points and requirements from: "${title}"`);
             }}
             showToast={showToast}
@@ -483,7 +535,7 @@ export const App: React.FC = () => {
         return (
           <DocumentViewerView
             document={activeDoc}
-            onBack={() => setCurrentTab('knowledge')}
+            onBack={() => handleSelectTab('knowledge')}
             showToast={showToast}
           />
         );
@@ -556,6 +608,26 @@ export const App: React.FC = () => {
     }
   };
 
+  // ── /reset-password route — intercept before any auth gate ────────────────
+  if (typeof window !== 'undefined' && window.location.pathname === '/reset-password') {
+    return (
+      <div className="app-shell-root" style={{ background: 'var(--bg-app)', minHeight: '100dvh' }}>
+        <ResetPasswordView
+          onGoToLogin={() => {
+            window.history.pushState(null, '', '/');
+            setAuthModalOpen(true);
+          }}
+          onGoToForgot={() => {
+            window.history.pushState(null, '', '/');
+            setAuthModalOpen(true);
+            // AuthModal initialMode='forgot' will be propagated via the open handler
+          }}
+        />
+        <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+      </div>
+    );
+  }
+
   // Show loading spinner while checking session
   if (isAuthLoading) {
     return (
@@ -574,6 +646,7 @@ export const App: React.FC = () => {
           onClose={() => {}}
           onAuthSuccess={(user) => {
             setCurrentUser(user);
+            setAuthModalOpen(false);
             setIsAuthLoading(false);
             refreshWorkspaceData();
           }}
@@ -593,16 +666,16 @@ export const App: React.FC = () => {
         <div className={`mobile-app-shell ${isComposerFocused ? 'composer-focused' : ''}`}>
           <MobileHeader
             currentTab={currentTab}
-            onSelectTab={setCurrentTab}
+            onSelectTab={handleSelectTab}
             onOpenSearch={() => setCommandPaletteOpen(true)}
             onOpenAdd={() => setAddSheetOpen(true)}
             theme={theme}
             onToggleTheme={handleToggleTheme}
             backAction={
               currentTab === 'note-editor' || currentTab === 'doc-viewer'
-                ? () => setCurrentTab('knowledge')
+                ? () => handleSelectTab('knowledge')
                 : currentTab === 'project-detail'
-                ? () => setCurrentTab('projects')
+                ? () => handleSelectTab('projects')
                 : undefined
             }
           />
@@ -613,7 +686,7 @@ export const App: React.FC = () => {
 
           <MobileBottomNav
             currentTab={currentTab}
-            onSelectTab={setCurrentTab}
+            onSelectTab={handleSelectTab}
             onOpenAdd={() => setAddSheetOpen(true)}
             onOpenSearch={() => setCommandPaletteOpen(true)}
             onOpenMoreMenu={() => setMoreDrawerOpen(true)}
@@ -627,7 +700,7 @@ export const App: React.FC = () => {
         <div className="desktop-app-shell">
           <DesktopSidebar
             currentTab={currentTab}
-            onSelectTab={setCurrentTab}
+            onSelectTab={handleSelectTab}
             theme={theme}
             onToggleTheme={handleToggleTheme}
             collapsed={sidebarCollapsed}
@@ -635,6 +708,10 @@ export const App: React.FC = () => {
             pendingTasksCount={pendingTasksCount}
             user={currentUser}
             onOpenAuth={() => setAuthModalOpen(true)}
+            onOpenProfile={() => setProfileOpen(true)}
+            pinnedItems={pinnedItems}
+            onOpenNote={handleOpenNote}
+            onOpenDoc={handleOpenDoc}
           />
 
           <div className="desktop-workspace-column">
@@ -645,6 +722,11 @@ export const App: React.FC = () => {
               rightPanelOpen={rightPanelOpen}
               onToggleRightPanel={() => setRightPanelOpen(prev => !prev)}
               showRightPanelToggle={currentTab !== 'note-editor' && currentTab !== 'doc-viewer'}
+              onNavigate={handleSelectTab}
+              onOpenNote={handleOpenNote}
+              onOpenDoc={handleOpenDoc}
+              tasks={tasks}
+              activities={activities}
             />
 
             <div className="desktop-canvas-row">
@@ -698,13 +780,37 @@ export const App: React.FC = () => {
         onNavigate={setCurrentTab}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        onOpenProfile={() => setProfileOpen(true)}
       />
+
+      {profileOpen && (
+        <ProfileView
+          user={currentUser ?? undefined}
+          onBack={() => setProfileOpen(false)}
+          onUpdateUser={(updated) => {
+            setCurrentUser(prev => prev ? { ...prev, ...updated } : prev);
+            api.updateProfile(updated).catch(() => {});
+          }}
+          onLogout={async () => {
+            await api.logout();
+            showToast('Signed out of workspace', 'info');
+            setCurrentUser(null);
+            setProfileOpen(false);
+            setAuthModalOpen(true);
+          }}
+          showToast={showToast}
+          taskCount={tasks.filter(t => !t.completed).length}
+          knowledgeCount={knowledge.length}
+          projectCount={projects.length}
+        />
+      )}
 
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onAuthSuccess={(user) => {
           setCurrentUser(user);
+          setAuthModalOpen(false);
           refreshWorkspaceData();
         }}
         showToast={showToast}

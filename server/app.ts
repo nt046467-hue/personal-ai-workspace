@@ -52,7 +52,7 @@ export function createApp(): express.Application {
       origin: (origin, callback) => {
         // Allow requests with no origin (server-to-server, curl, test suites)
         if (!origin) return callback(null, true);
-        if (config.appOrigins.includes(origin)) {
+        if (config.appOrigins.includes(origin) || (origin && origin.endsWith('.vercel.app'))) {
           return callback(null, true);
         }
         // Deny unauthorized origin by omitting Access-Control-Allow-Origin
@@ -70,21 +70,21 @@ export function createApp(): express.Application {
   // Double-submit CSRF Protection on mutating requests
   app.use(csrfProtection);
 
-  // API Routes
-  app.use('/api/auth', authRouter);
-  app.use('/api/knowledge', knowledgeRouter);
-  app.use('/api/tasks', tasksRouter);
-  app.use('/api/projects', projectsRouter);
-  app.use('/api/bookmarks', bookmarksRouter);
-  app.use('/api/documents', documentsRouter);
-  app.use('/api/search', searchRouter);
-  app.use('/api/conversations', conversationsRouter);
-  app.use('/api/ai', aiRouter);
-  app.use('/api/activities', activitiesRouter);
-  app.use('/api/settings', settingsRouter);
+  // API Routes (Mounted with /api prefix and fallback without /api for Vercel Serverless Function rewrites)
+  app.use(['/api/auth', '/auth'], authRouter);
+  app.use(['/api/knowledge', '/knowledge'], knowledgeRouter);
+  app.use(['/api/tasks', '/tasks'], tasksRouter);
+  app.use(['/api/projects', '/projects'], projectsRouter);
+  app.use(['/api/bookmarks', '/bookmarks'], bookmarksRouter);
+  app.use(['/api/documents', '/documents'], documentsRouter);
+  app.use(['/api/search', '/search'], searchRouter);
+  app.use(['/api/conversations', '/conversations'], conversationsRouter);
+  app.use(['/api/ai', '/ai'], aiRouter);
+  app.use(['/api/activities', '/activities'], activitiesRouter);
+  app.use(['/api/settings', '/settings'], settingsRouter);
 
   // Health check
-  app.get('/api/health', (req, res) => {
+  app.get(['/api/health', '/health'], (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 

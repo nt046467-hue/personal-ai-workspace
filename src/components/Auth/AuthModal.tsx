@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, Mail, X, ArrowRight, ShieldCheck, Eye, EyeOff, Loader2, Check } from 'lucide-react';
+import { User, Lock, Mail, X, ArrowRight, ShieldCheck, Eye, EyeOff, Loader2, Check, KeyRound, ChevronLeft, SendHorizonal } from 'lucide-react';
 import { MySpaceLogo } from '../Brand/MySpaceLogo';
 import { api } from '../../services/api';
 import type { UserSession } from '../../services/api';
@@ -8,11 +8,14 @@ import './AuthModal.css';
 // Must stay in sync with signupSchema password min in server/validation/schemas.ts (currently 10)
 const MIN_PASSWORD_LENGTH = 10;
 
+type AuthMode = 'login' | 'signup' | 'forgot';
+
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthSuccess: (user: UserSession) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  initialMode?: AuthMode;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -20,27 +23,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onAuthSuccess,
   showToast,
+  initialMode = 'login',
 }) => {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; name?: string }>({});
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotEmailError, setForgotEmailError] = useState<string | undefined>();
+  const [forgotSent, setForgotSent] = useState(false);
 
   if (!isOpen) return null;
 
   const handleClose = () => {
     setShowPassword(false);
     setFieldErrors({});
+    setForgotEmail('');
+    setForgotEmailError(undefined);
+    setForgotSent(false);
     onClose();
   };
 
-  const switchMode = (newMode: 'login' | 'signup') => {
+  const switchMode = (newMode: AuthMode) => {
     setMode(newMode);
     setShowPassword(false);
     setFieldErrors({});
+    setForgotEmail('');
+    setForgotEmailError(undefined);
+    setForgotSent(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,15 +106,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const code = err.code || err.error?.code;
       const message = err.message || '';
 
-      // 2. INVALID_CREDENTIALS -> highlight both email and password
+      // 2. WRONG_PASSWORD -> highlight password field specifically
       if (
-        code === 'INVALID_CREDENTIALS' ||
-        /invalid.*password|incorrect.*password|credential/i.test(message)
+        code === 'WRONG_PASSWORD' ||
+        /incorrect.*password|wrong.*password/i.test(message)
       ) {
         setFieldErrors({
-          email: 'Incorrect email or password.',
+          password: 'Incorrect password. Please try again.',
+        });
+        showToast('Incorrect password. Please try again.', 'error');
+        return;
+      }
+
+      // 3. USER_NOT_FOUND -> highlight email field
+      if (
+        code === 'USER_NOT_FOUND' ||
+        /no account found with this email/i.test(message)
+      ) {
+        setFieldErrors({
+          email: 'No account found with this email address.',
+        });
+        showToast('No account found with this email address.', 'error');
+        return;
+      }
+
+      // 4. Generic INVALID_CREDENTIALS fallback
+      if (
+        code === 'INVALID_CREDENTIALS' ||
+        /invalid.*password|credential/i.test(message)
+      ) {
+        setFieldErrors({
           password: 'Incorrect email or password.',
         });
+        showToast('Incorrect email or password.', 'error');
         return;
       }
 
@@ -138,6 +176,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setForgotEmailError('Please enter your email address.');
+      return;
+    }
+    setLoading(true);
+    setForgotEmailError(undefined);
+    try {
+      // Always show success regardless of server response (anti-enumeration, P-5)
+      await api.forgotPassword(forgotEmail.trim()).catch(() => {});
+      setForgotSent(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleQuickDemoLogin = async () => {
     setLoading(true);
     setFieldErrors({});
@@ -155,6 +210,108 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const isSubmitDisabled = loading || (mode === 'signup' && password.length > 0 && password.length < MIN_PASSWORD_LENGTH);
 
+  // ─── Forgot Password Mode ────────────────────────────────────────────────────
+  if (mode === 'forgot') {
+    return (
+      <div className="modal-overlay" onClick={handleClose}>
+        <div className="auth-modal-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="forgot-title">
+          <button className="btn-icon auth-modal-close" onClick={handleClose} aria-label="Close">
+            <X size={18} />
+          </button>
+
+          <div className="auth-modal-header">
+            <div className="auth-brand-glyph">
+              <MySpaceLogo size={44} />
+              <div className="auth-brand-wordmark">
+                <span className="auth-brand-name">MySpace<span className="auth-brand-accent">AI</span></span>
+                <span className="auth-brand-tagline">Your Mind, Organized</span>
+              </div>
+            </div>
+            <h2 className="auth-modal-title" id="forgot-title">
+              {forgotSent ? 'Check Your Inbox' : 'Reset Password'}
+            </h2>
+            <p className="auth-modal-sub">
+              {forgotSent
+                ? "If that email exists in our system, you'll receive a reset link shortly."
+                : 'Enter your email and we\'ll send you a secure reset link.'}
+            </p>
+          </div>
+
+          {forgotSent ? (
+            <div className="auth-forgot-success">
+              <div className="auth-forgot-success-icon">
+                <Check size={28} />
+              </div>
+              <p className="auth-forgot-success-msg">
+                The link expires in <strong>30 minutes</strong>. Check your spam folder if you don't see it.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary auth-submit-btn"
+                onClick={() => switchMode('login')}
+              >
+                <ChevronLeft size={15} />
+                <span>Back to Sign In</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              <form className="auth-form" onSubmit={handleForgotSubmit} noValidate>
+                <div className="form-group">
+                  <label htmlFor="forgot-email">Email Address</label>
+                  <div className={`auth-input-wrap ${forgotEmailError ? 'has-error' : ''}`}>
+                    <Mail size={16} className="auth-input-icon" />
+                    <input
+                      id="forgot-email"
+                      type="email"
+                      name="email"
+                      placeholder="name@workspace.ai"
+                      value={forgotEmail}
+                      onChange={(e) => {
+                        setForgotEmail(e.target.value);
+                        if (forgotEmailError) setForgotEmailError(undefined);
+                      }}
+                      autoComplete="email"
+                      aria-invalid={!!forgotEmailError}
+                      aria-describedby={forgotEmailError ? 'forgot-email-error' : undefined}
+                      autoFocus
+                    />
+                  </div>
+                  {forgotEmailError && (
+                    <span id="forgot-email-error" className="auth-field-error" role="alert">
+                      {forgotEmailError}
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  id="forgot-submit-btn"
+                  className="btn btn-primary auth-submit-btn"
+                  disabled={loading}
+                  aria-busy={loading}
+                >
+                  {loading ? <Loader2 size={16} className="auth-spinner" /> : <SendHorizonal size={16} />}
+                  <span>{loading ? 'Sending...' : 'Send Reset Link'}</span>
+                </button>
+              </form>
+
+              <div className="auth-footer-toggle">
+                <p>
+                  <button type="button" className="auth-link-btn" onClick={() => switchMode('login')}>
+                    <ChevronLeft size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} />
+                    Back to Sign In
+                  </button>
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Login / Signup Mode ─────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={handleClose}>
       <div className="auth-modal-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
@@ -261,7 +418,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           <div className="form-group">
-            <label htmlFor="auth-password">Password</label>
+            <div className="auth-password-label-row">
+              <label htmlFor="auth-password">Password</label>
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  id="forgot-password-link"
+                  className="auth-forgot-link"
+                  onClick={() => switchMode('forgot')}
+                >
+                  <KeyRound size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
+                  Forgot password?
+                </button>
+              )}
+            </div>
             <div className={`auth-input-wrap ${fieldErrors.password ? 'has-error' : ''}`}>
               <Lock size={16} className="auth-input-icon" />
               <input

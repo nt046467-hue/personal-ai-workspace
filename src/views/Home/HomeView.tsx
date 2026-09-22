@@ -14,6 +14,8 @@ import {
 import type { Task, KnowledgeItem, Project, Activity } from '../../data/mockData';
 import { CURRENT_USER } from '../../data/mockData';
 import type { NavigationTab } from '../../components/AppShell/DesktopSidebar';
+import type { UserSession } from '../../services/api';
+import { formatTimeAgo } from '../../utils/time';
 import './HomeView.css';
 
 interface HomeViewProps {
@@ -27,6 +29,7 @@ interface HomeViewProps {
   onOpenDoc: (id: string) => void;
   onOpenProject: (id: string) => void;
   onOpenAdd: () => void;
+  user?: UserSession;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -40,11 +43,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenDoc,
   onOpenProject,
   onOpenAdd,
+  user,
 }) => {
   const pendingTasks = tasks.filter(t => !t.completed);
   const todayTasks = pendingTasks.filter(t => t.dueCategory === 'today');
   const recentDocs = knowledge.slice(0, 3);
   const activeProjects = projects.slice(0, 3);
+  const displayName = (user?.name || CURRENT_USER.name).split(' ')[0];
 
   return (
     <div className="home-view-container">
@@ -55,7 +60,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         {/* Personalized Welcome Banner */}
         <div className="home-desktop-header">
           <div className="header-greeting-block">
-            <h1 className="greeting-title">Good morning, {CURRENT_USER.name.split(' ')[0]}</h1>
+            <h1 className="greeting-title">Good morning, {displayName}</h1>
             <p className="greeting-subtitle">
               You have <strong className="highlight-count">{todayTasks.length} tasks</strong> needing attention today across your active engineering projects.
             </p>
@@ -146,7 +151,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   </div>
                   <div className="doc-card-info">
                     <span className="doc-card-title">{item.title}</span>
-                    <span className="doc-card-sub">{item.type} · {item.tags.join(', ')} • {item.updatedAt}</span>
+                    <span className="doc-card-sub">{item.type} · {item.tags.join(', ')} • {formatTimeAgo(item.updatedAt)}</span>
                   </div>
                   <ChevronRight size={14} className="doc-card-arrow" />
                 </div>
@@ -313,7 +318,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <FileText size={18} />
                 </div>
                 <span className="scroll-card-title">{doc.title}</span>
-                <span className="scroll-card-meta">{doc.updatedAt}</span>
+                <span className="scroll-card-meta">{formatTimeAgo(doc.updatedAt)}</span>
               </div>
             ))}
           </div>

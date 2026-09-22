@@ -5,6 +5,7 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { assertOwned } from '../db/ownership';
 import { createKnowledgeSchema, updateKnowledgeSchema } from '../validation/schemas';
+import { formatRelativeTime } from '../utils/time';
 
 const router = Router();
 router.use(requireAuth);
@@ -24,15 +25,7 @@ async function formatKnowledgeItem(row: any, db: any): Promise<any> {
   });
   const tags = tagRows.rows.map((r: any) => String(r.name));
 
-  // Timeago helper
-  const updatedDate = new Date(row.updated_at);
-  const diffHours = Math.floor((Date.now() - updatedDate.getTime()) / (1000 * 60 * 60));
-  let timeStr = 'Just now';
-  if (diffHours >= 24) {
-    timeStr = `${Math.floor(diffHours / 24)} days ago`;
-  } else if (diffHours > 0) {
-    timeStr = `${diffHours} hours ago`;
-  }
+  const timeStr = formatRelativeTime(row.updated_at);
 
   return {
     id: String(row.id),

@@ -6,11 +6,13 @@ import { generateAccessToken, generateRefreshToken } from '../auth/jwt';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { validateBody } from '../middleware/validate';
-import { signupSchema, loginSchema, profileSchema } from '../validation/schemas';
+import { signupSchema, loginSchema, profileSchema, forgotPasswordSchema, resetPasswordSchema } from '../validation/schemas';
 import { config } from '../config';
+import { sendEmail } from '../email/resend';
 
 const router = Router();
 const authLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
+const forgotPasswordLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 
 async function setAuthCookies(
   res: Response, 
@@ -188,7 +190,7 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
     if (!user) {
       res.status(401).json({
         success: false,
-        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' },
+        error: { code: 'USER_NOT_FOUND', message: 'No account found with this email address.' },
       });
       return;
     }
@@ -197,7 +199,7 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
     if (!match) {
       res.status(401).json({
         success: false,
-        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' },
+        error: { code: 'WRONG_PASSWORD', message: 'Incorrect password. Please try again.' },
       });
       return;
     }
@@ -370,5 +372,146 @@ router.put('/profile', requireAuth, validateBody(profileSchema), async (req: Aut
 
   res.json({ success: true, message: 'Profile updated successfully.' });
 });
+
+// Forgot Password
+router.post('/forgot-password', forgotPasswordLimiter, validateBody(forgotPasswordSchema), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    const db = getDatabase();
+
+    const userRes = await db.execute({
+      sql: 'SELECT id, email, name FROM users WHERE email = ? LIMIT 1',
+      args: [email],
+    });
+    const user = userRes.rows[0] as any;
+
+    if (user) {
+      // Invalidate any older unused tokens for this user
+      await db.execute({
+        sql: `UPDATE password_reset_tokens SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL`,
+        args: [user.id],
+      });
+
+      const tokenId = `prt-${crypto.randomBytes(12).toString('hex')}`;
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+      await db.execute({
+        sql: `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+        args: [tokenId, user.id, tokenHash, expiresAt],
+      });
+
+      const origin = (req.headers.origin && config.appOrigins.includes(req.headers.origin))
+        ? req.headers.origin
+        : config.appOrigin;
+      const resetLink = `${origin}/reset-password?token=${rawToken}`;
+
+      try {
+        await sendEmail({
+          to: String(user.email),
+          subject: 'Reset your MySpace AI password',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1e293b; line-height: 1.6;">
+              <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin-bottom: 16px;">Reset your password</h2>
+              <p style="margin-bottom: 16px;">Hello ${user.name || 'there'},</p>
+              <p style="margin-bottom: 24px;">We received a request to reset your password for your MySpace AI account. Click the button below to choose a new password:</p>
+              <div style="margin: 28px 0;">
+                <a href="${resetLink}" style="background-color: #6366f1; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; font-size: 14px; display: inline-block;">Reset Password</a>
+              </div>
+              <p style="color: #64748b; font-size: 13px; margin-bottom: 8px;">Or copy and paste this URL into your browser:</p>
+              <p style="color: #6366f1; font-size: 13px; word-break: break-all; margin-bottom: 24px;">${resetLink}</p>
+              <p style="color: #64748b; font-size: 13px; margin-bottom: 8px;">This link will expire in 30 minutes.</p>
+              <p style="color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px;">If you didn't request a password reset, you can safely ignore this email.</p>
+            </div>
+          `,
+          text: `Hello ${user.name || 'there'},\n\nWe received a request to reset your password for your MySpace AI account.\n\nUse this link to reset your password:\n${resetLink}\n\nThis link will expire in 30 minutes.\n\nIf you didn't request a password reset, you can safely ignore this email.`,
+        });
+      } catch (emailErr) {
+        console.error('[Auth] Password reset email dispatch failed:', emailErr);
+      }
+    } else {
+      // Timing side-channel mitigation (P-13): dummy computation of comparable duration
+      await bcrypt.hash('dummy-password-for-timing-side-channel-defense', 10);
+    }
+
+    res.json({
+      success: true,
+      message: "If that email exists, we've sent a reset link.",
+    });
+  } catch (err: any) {
+    console.error('[Auth] Forgot password error:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Failed to process password recovery request.' },
+    });
+  }
+});
+
+// Reset Password
+router.post('/reset-password', authLimiter, validateBody(resetPasswordSchema), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, newPassword } = req.body;
+    const db = getDatabase();
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const tokenRes = await db.execute({
+      sql: `SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ? LIMIT 1`,
+      args: [tokenHash],
+    });
+
+    const tokenRecord = tokenRes.rows[0] as any;
+    const isUnused = tokenRecord && (tokenRecord.used_at === null || tokenRecord.used_at === undefined);
+    const isNotExpired = tokenRecord && new Date(String(tokenRecord.expires_at)).getTime() > Date.now();
+
+    if (!tokenRecord || !isUnused || !isNotExpired) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_OR_EXPIRED_TOKEN',
+          message: 'The password reset link is invalid or has expired. Please request a new one.',
+        },
+      });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const userId = String(tokenRecord.user_id);
+
+    // 1. Update user password and bump token_version to invalidate existing access tokens
+    await db.execute({
+      sql: `UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      args: [passwordHash, userId],
+    });
+
+    // 2. Mark this token as used
+    await db.execute({
+      sql: `UPDATE password_reset_tokens SET used_at = datetime('now') WHERE id = ?`,
+      args: [tokenRecord.id],
+    });
+
+    // 3. Invalidate/delete all active refresh sessions for this user
+    await db.execute({
+      sql: `DELETE FROM sessions WHERE user_id = ?`,
+      args: [userId],
+    });
+
+    // 4. Clear any auth cookies on the client
+    clearAuthCookies(res);
+
+    res.json({
+      success: true,
+      message: 'Password updated successfully. You can now log in with your new password.',
+    });
+  } catch (err: any) {
+    console.error('[Auth] Reset password error:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: 'Failed to reset password.' },
+    });
+  }
+});
+
 
 export default router;

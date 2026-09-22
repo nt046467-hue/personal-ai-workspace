@@ -20,6 +20,15 @@ export const profileSchema = z.object({
   timezone: z.string().max(50).optional(),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Invalid email address format.'),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(20, 'Invalid or malformed reset token.'),
+  newPassword: z.string().min(10, 'Password must be at least 10 characters long.').max(128),
+});
+
 // ============================================================================
 // Task Schemas
 // ============================================================================

@@ -2,6 +2,7 @@ import React from 'react';
 import { Bot, X, BookOpen, Sparkles } from 'lucide-react';
 import type { NavigationTab } from './DesktopSidebar';
 import type { Task, KnowledgeItem } from '../../data/mockData';
+import { formatTimeAgo } from '../../utils/time';
 import './DesktopRightPanel.css';
 
 interface DesktopRightPanelProps {
@@ -110,7 +111,7 @@ export const DesktopRightPanel: React.FC<DesktopRightPanelProps> = ({
                 <BookOpen size={14} className="action-item-icon" />
                 <div className="action-item-text">
                   <span className="action-item-title">{item.title}</span>
-                  <span className="action-item-sub">{item.updatedAt || 'Recent'} • {item.readTime || (item.type === 'document' ? 'Document' : 'Note')}</span>
+                  <span className="action-item-sub">{formatTimeAgo(item.updatedAt)} • {item.readTime || (item.type === 'document' ? 'Document' : 'Note')}</span>
                 </div>
               </button>
             ))

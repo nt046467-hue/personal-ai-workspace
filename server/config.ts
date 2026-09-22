@@ -22,6 +22,8 @@ export interface ServerConfig {
   aiDailyCapDefault: number;
   appOrigins: string[];
   seedDemo: boolean;
+  resendApiKey?: string;
+  emailFrom: string;
 }
 
 const env = (process.env.NODE_ENV as ServerConfig['env']) || 'development';
@@ -56,9 +58,15 @@ export const config: ServerConfig = {
   aiModel: process.env.AI_MODEL || undefined,
   aiBaseUrl: process.env.AI_BASE_URL || undefined,
   aiDailyCapDefault: parseInt(process.env.AI_DAILY_CAP_DEFAULT || '20', 10),
-  appOrigins: (process.env.APP_ORIGIN || 'http://localhost:5173,http://localhost:3001,http://127.0.0.1:5173')
-    .split(',')
-    .map(o => o.trim())
-    .filter(Boolean),
+  appOrigins: [
+    ...(process.env.APP_ORIGIN || 'http://localhost:5173,http://localhost:3001,http://127.0.0.1:5173')
+      .split(',')
+      .map(o => o.trim())
+      .filter(Boolean),
+    ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
+    ...(process.env.VERCEL_BRANCH_URL ? [`https://${process.env.VERCEL_BRANCH_URL}`] : []),
+  ],
   seedDemo: process.env.SEED_DEMO === 'true',
+  resendApiKey: process.env.RESEND_API_KEY || undefined,
+  emailFrom: process.env.EMAIL_FROM || 'MySpace AI <onboarding@resend.dev>',
 };

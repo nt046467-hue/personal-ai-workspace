@@ -1,18 +1,10 @@
 import { Router, Response } from 'express';
 import { getDatabase } from '../db';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { formatRelativeTime } from '../utils/time';
 
 const router = Router();
 router.use(requireAuth);
-
-function formatRelativeTime(dateStr: string): string {
-  const diffMs = Date.now() - new Date(dateStr).getTime();
-  const diffMinutes = Math.floor(diffMs / (1000 * 60));
-  if (diffMinutes < 60) return `${Math.max(1, diffMinutes)}m ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
-}
 
 // GET /api/activities
 router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
