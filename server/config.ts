@@ -15,10 +15,11 @@ export interface ServerConfig {
   appOrigin: string;
   storageDir: string;
   dbPath: string;
-  aiProvider: 'local' | 'openai' | 'anthropic' | 'gemini' | 'ollama';
+  aiProvider: 'local' | 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'groq';
   aiApiKey?: string;
   aiModel?: string;
   aiBaseUrl?: string;
+  aiDailyCapDefault: number;
   appOrigins: string[];
   seedDemo: boolean;
 }
@@ -54,6 +55,7 @@ export const config: ServerConfig = {
   aiApiKey: process.env.AI_API_KEY || undefined,
   aiModel: process.env.AI_MODEL || undefined,
   aiBaseUrl: process.env.AI_BASE_URL || undefined,
+  aiDailyCapDefault: parseInt(process.env.AI_DAILY_CAP_DEFAULT || '20', 10),
   appOrigins: (process.env.APP_ORIGIN || 'http://localhost:5173,http://localhost:3001,http://127.0.0.1:5173')
     .split(',')
     .map(o => o.trim())

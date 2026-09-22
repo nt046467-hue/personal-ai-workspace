@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   User, 
   Palette, 
@@ -9,15 +9,21 @@ import {
   ArrowLeft,
   Check,
   Download,
-  Sparkles
+  Sparkles,
+  Key,
+  Trash2,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import { CURRENT_USER } from '../../data/mockData';
 import type { UserSession } from '../../services/api';
 import { 
   SettingsSection, 
   SettingRow, 
-  ToggleSwitch, 
-  CustomSelect 
+  ToggleSwitch 
 } from './SettingsComponents';
 import './SettingsView.css';
 
@@ -48,9 +54,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Form states
   const [name, setName] = useState(user?.name || CURRENT_USER.name);
   const [email, setEmail] = useState(user?.email || CURRENT_USER.email);
-  const [aiModel, setAiModel] = useState('Claude 3.5 Sonnet / Gemini 1.5 Pro Hybrid');
-  const [autoIndexDocs, setAutoIndexDocs] = useState(true);
+  // AI / BYOK state
+  const [byokProvider, setByokProvider] = useState('gemini');
+  const [byokBaseUrl, setByokBaseUrl] = useState('');
+  const [byokModel, setByokModel] = useState('');
+  const [byokKey, setByokKey] = useState('');
+  const [byokKeyMasked, setByokKeyMasked] = useState<string | null>(null); // loaded from server
+  const [byokShowKey, setByokShowKey] = useState(false);
+  const [byokStatus, setByokStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [byokErrorMsg, setByokErrorMsg] = useState('');
+  const [byokHasKey, setByokHasKey] = useState(false);
+  const [byokDeleting, setByokDeleting] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
+
+  const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = {
+    gemini:    { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-1.5-flash' },
+    openai:    { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    groq:      { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama3-70b-8192' },
+    openrouter:{ baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.5-sonnet' },
+    ollama:    { baseUrl: 'http://localhost:11434/v1', model: 'llama3' },
+    custom:    { baseUrl: '', model: '' },
+  };
+
+  // Load existing BYOK settings on mount
+  const loadByokSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/ai', { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        const d = json.data;
+        if (d?.hasKey) {
+          setByokHasKey(true);
+          setByokKeyMasked(d.maskedKey || null);
+          setByokProvider(d.provider || 'gemini');
+          setByokBaseUrl(d.baseUrl || '');
+          setByokModel(d.model || '');
+        }
+      }
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
+  useEffect(() => { loadByokSettings(); }, [loadByokSettings]);
 
   // Sync state if user prop changes
   useEffect(() => {
@@ -59,6 +105,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setEmail(user.email);
     }
   }, [user]);
+
+  // When provider changes, fill in sensible defaults for URL + model
+  const handleProviderChange = (p: string) => {
+    setByokProvider(p);
+    const defaults = PROVIDER_DEFAULTS[p] || { baseUrl: '', model: '' };
+    setByokBaseUrl(defaults.baseUrl);
+    setByokModel(defaults.model);
+  };
 
   const sections = [
     { id: 'account' as SettingsSectionType, label: 'Account Profile', icon: <User size={16} />, desc: 'Personal details and email preferences' },
@@ -232,50 +286,195 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       case 'ai':
         return (
           <SettingsSection
-            asForm
-            onSubmit={handleSave}
-            title="AI Workspace Intelligence"
-            description="Configure local vector embeddings and autonomous workspace context."
+            title="AI Provider"
+            description="Connect your own API key (BYOK). Your key is stored encrypted and never logged. The operator provides a shared key with a daily usage cap."
           >
-            <div className="settings-rows-group">
-              <SettingRow
-                layout="stacked"
-                htmlFor="reasoning-engine-select"
-                title="Reasoning Engine"
-                description="Select the primary inference engine powering workspace synthesis and answers."
-              >
-                <CustomSelect
-                  id="reasoning-engine-select"
-                  value={aiModel}
-                  onChange={(e) => setAiModel(e.target.value)}
-                  ariaDescribedBy="reasoning-engine-select-desc"
-                >
-                  <option value="Claude 3.5 Sonnet / Gemini 1.5 Pro Hybrid">Hybrid Engine (High Precision)</option>
-                  <option value="Local-First Llama 3 8B">Local-First (Offline Privacy)</option>
-                  <option value="Fast Latency Turbo">Low-Latency Fast Streamer</option>
-                </CustomSelect>
-              </SettingRow>
+            {/* Current key status banner */}
+            {byokHasKey && (
+              <div className="byok-status-banner byok-status-active">
+                <CheckCircle2 size={16} aria-hidden="true" />
+                <span>Active BYOK key connected</span>
+                {byokKeyMasked && <code className="byok-masked-key">{byokKeyMasked}</code>}
+              </div>
+            )}
+            {!byokHasKey && (
+              <div className="byok-status-banner byok-status-none">
+                <AlertCircle size={16} aria-hidden="true" />
+                <span>Using shared operator key · <strong>{'{daily cap}'}</strong> requests/day</span>
+              </div>
+            )}
 
-              <SettingRow
-                htmlFor="auto-index-switch"
-                title="Automatic Document Indexing"
-                description="Automatically embed notes and PDFs for instant universal semantic search."
-                control={
-                  <ToggleSwitch
-                    id="auto-index-switch"
-                    checked={autoIndexDocs}
-                    onChange={setAutoIndexDocs}
-                    ariaDescribedBy="auto-index-switch-desc"
+            <div className="settings-rows-group byok-form-grid">
+              {/* Provider */}
+              <div className="settings-field-group">
+                <label htmlFor="byok-provider" className="settings-field-label">Provider</label>
+                <select
+                  id="byok-provider"
+                  className="settings-text-input byok-select"
+                  value={byokProvider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                >
+                  <option value="gemini">Google Gemini (recommended)</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="groq">Groq</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="ollama">Ollama (local)</option>
+                  <option value="custom">Custom / Self-hosted</option>
+                </select>
+              </div>
+
+              {/* API Key */}
+              <div className="settings-field-group">
+                <label htmlFor="byok-api-key" className="settings-field-label">
+                  <Key size={13} aria-hidden="true" /> API Key
+                </label>
+                <div className="byok-key-input-wrap">
+                  <input
+                    id="byok-api-key"
+                    type={byokShowKey ? 'text' : 'password'}
+                    className="settings-text-input byok-key-input"
+                    value={byokKey}
+                    onChange={(e) => setByokKey(e.target.value)}
+                    placeholder={byokHasKey ? '(leave blank to keep current key)' : 'sk-… / AIza…'}
+                    autoComplete="off"
+                    spellCheck={false}
                   />
-                }
-              />
+                  <button
+                    type="button"
+                    className="byok-eye-btn"
+                    aria-label={byokShowKey ? 'Hide key' : 'Show key'}
+                    onClick={() => setByokShowKey((v) => !v)}
+                  >
+                    {byokShowKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Base URL */}
+              <div className="settings-field-group">
+                <label htmlFor="byok-base-url" className="settings-field-label">Base URL</label>
+                <input
+                  id="byok-base-url"
+                  type="url"
+                  className="settings-text-input"
+                  value={byokBaseUrl}
+                  onChange={(e) => setByokBaseUrl(e.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                />
+              </div>
+
+              {/* Model */}
+              <div className="settings-field-group">
+                <label htmlFor="byok-model" className="settings-field-label">Model</label>
+                <input
+                  id="byok-model"
+                  type="text"
+                  className="settings-text-input"
+                  value={byokModel}
+                  onChange={(e) => setByokModel(e.target.value)}
+                  placeholder="gpt-4o-mini"
+                />
+              </div>
             </div>
 
-            <div className="settings-actions-footer">
-              <button type="submit" className="settings-btn settings-btn-primary">
-                <Sparkles size={16} aria-hidden="true" />
-                Update AI Engine
+            {/* Feedback */}
+            {byokStatus === 'error' && (
+              <div className="byok-feedback byok-feedback-error" role="alert">
+                <AlertCircle size={14} aria-hidden="true" />
+                {byokErrorMsg}
+              </div>
+            )}
+            {byokStatus === 'success' && (
+              <div className="byok-feedback byok-feedback-success" role="status">
+                <CheckCircle2 size={14} aria-hidden="true" />
+                Key verified and saved successfully.
+              </div>
+            )}
+
+            <div className="settings-actions-footer byok-footer">
+              <button
+                type="button"
+                className="settings-btn settings-btn-primary"
+                disabled={byokStatus === 'loading' || (!byokKey.trim() && !byokHasKey)}
+                onClick={async () => {
+                  if (!byokKey.trim() && byokHasKey) {
+                    // Key not changed — save only provider/url/model? For simplicity: no-op unless key entered.
+                    showToast('Enter a new API key to update settings.');
+                    return;
+                  }
+                  setByokStatus('loading');
+                  setByokErrorMsg('');
+                  try {
+                    const res = await fetch('/api/settings/ai', {
+                      method: 'PUT',
+                      credentials: 'include',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        provider: byokProvider,
+                        apiKey: byokKey.trim(),
+                        baseUrl: byokBaseUrl.trim(),
+                        model: byokModel.trim(),
+                      }),
+                    });
+                    const json = await res.json();
+                    if (!res.ok) {
+                      setByokStatus('error');
+                      setByokErrorMsg(json.error?.message || 'Failed to save key.');
+                    } else {
+                      setByokStatus('success');
+                      setByokKey('');
+                      setByokHasKey(true);
+                      setByokKeyMasked(json.data?.maskedKey || null);
+                      showToast('AI key saved and verified.');
+                      setTimeout(() => setByokStatus('idle'), 3000);
+                    }
+                  } catch {
+                    setByokStatus('error');
+                    setByokErrorMsg('Network error. Please try again.');
+                  }
+                }}
+              >
+                {byokStatus === 'loading' ? (
+                  <><Loader2 size={15} className="byok-spinner" aria-hidden="true" /> Verifying…</>
+                ) : (
+                  <><Sparkles size={15} aria-hidden="true" /> Save & Test Connection</>
+                )}
               </button>
+
+              {byokHasKey && (
+                <button
+                  type="button"
+                  className="settings-btn settings-btn-secondary settings-btn-danger"
+                  disabled={byokDeleting}
+                  onClick={async () => {
+                    if (!confirm('Remove your BYOK key? The shared operator key will be used instead.')) return;
+                    setByokDeleting(true);
+                    try {
+                      const res = await fetch('/api/settings/ai', { method: 'DELETE', credentials: 'include' });
+                      if (res.ok) {
+                        setByokHasKey(false);
+                        setByokKeyMasked(null);
+                        setByokKey('');
+                        setByokStatus('idle');
+                        showToast('BYOK key removed. Using shared operator key.');
+                      } else {
+                        showToast('Failed to remove key. Please try again.');
+                      }
+                    } catch {
+                      showToast('Network error.');
+                    } finally {
+                      setByokDeleting(false);
+                    }
+                  }}
+                >
+                  {byokDeleting ? (
+                    <Loader2 size={15} className="byok-spinner" aria-hidden="true" />
+                  ) : (
+                    <Trash2 size={15} aria-hidden="true" />
+                  )}
+                  Remove Key
+                </button>
+              )}
             </div>
           </SettingsSection>
         );

@@ -77,6 +77,7 @@ In **Project Settings → Environment Variables**, add the following for both **
 - `APP_ORIGIN` (Your Vercel deployment URL, e.g. `https://myspace-ai.vercel.app`)
 - `AI_PROVIDER` / `AI_API_KEY` / `AI_MODEL` (Optional — falls back to Search Mode if unset)
 - `SEED_DEMO=false`
+- `VITE_SHOW_DEMO_LOGIN=false` (Must stay unset or 'false' in production so the demo shortcut is never exposed)
 
 ### 3. Deploy
 Vercel will execute the `vercel-build` script (`npm run db:migrate && vite build`), applying any unapplied migrations before bundling the client into `dist`. Serverless API handlers under `api/` automatically serve all `/api/*` endpoints.

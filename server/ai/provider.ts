@@ -1,4 +1,7 @@
 import { config } from '../config';
+import { getDatabase } from '../db';
+import { decryptApiKey } from './keyEncryption';
+import { incrementAndCheckDailyUsage } from './usage';
 
 export interface AICompletionOptions {
   temperature?: number;
@@ -334,12 +337,54 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
 }
 
 /**
- * AI Provider Factory
- * Falls back to honest SearchModeProvider when no API key is configured.
+ * AI Provider Factory (async, user-aware)
+ *
+ * Resolution order:
+ *  1. User has a BYOK key in user_ai_settings → use it (no daily cap).
+ *  2. Operator key configured AND daily usage under cap → use operator key.
+ *  3. Operator key configured but cap exceeded → SearchModeProvider.
+ *  4. No key at all → SearchModeProvider.
+ *
+ * Backward compatible: callers that pass no userId still get the
+ * operator-default behaviour (paths 2–4).
  */
-export function getAIProvider(): AIProvider {
+export async function getAIProvider(userId?: number): Promise<AIProvider> {
+  // ── 1. Per-user BYOK ──────────────────────────────────────────────────────
+  if (userId !== undefined) {
+    try {
+      const db = getDatabase();
+      const row = db
+        .prepare(
+          `SELECT provider, base_url, model, encrypted_api_key
+             FROM user_ai_settings
+            WHERE user_id = ?`
+        )
+        .get(userId) as
+        | { provider: string; base_url: string; model: string; encrypted_api_key: string }
+        | undefined;
+
+      if (row?.encrypted_api_key) {
+        const decryptedKey = decryptApiKey(row.encrypted_api_key);
+        return new OpenAICompatibleProvider(decryptedKey, row.base_url, row.model);
+      }
+    } catch (err) {
+      // Non-fatal — fall through to operator key
+      console.error('[AI Provider] Failed to load user BYOK settings, falling back:', err);
+    }
+  }
+
+  // ── 2 & 3. Operator key with daily cap ────────────────────────────────────
   if (config.aiApiKey && config.aiApiKey.trim().length > 0) {
+    if (userId !== undefined) {
+      const { allowed } = await incrementAndCheckDailyUsage(userId, config.aiDailyCapDefault);
+      if (!allowed) {
+        console.warn(`[AI Provider] Daily cap (${config.aiDailyCapDefault}) reached for user ${userId}; returning SearchModeProvider.`);
+        return new SearchModeProvider();
+      }
+    }
     return new OpenAICompatibleProvider();
   }
+
+  // ── 4. No key at all ──────────────────────────────────────────────────────
   return new SearchModeProvider();
 }

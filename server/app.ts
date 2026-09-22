@@ -14,6 +14,7 @@ import searchRouter from './routes/search';
 import conversationsRouter from './routes/conversations';
 import aiRouter from './routes/ai';
 import activitiesRouter from './routes/activities';
+import settingsRouter from './routes/settings';
 import { csrfProtection } from './middleware/csrf';
 
 export function createApp(): express.Application {
@@ -80,6 +81,7 @@ export function createApp(): express.Application {
   app.use('/api/conversations', conversationsRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/activities', activitiesRouter);
+  app.use('/api/settings', settingsRouter);
 
   // Health check
   app.get('/api/health', (req, res) => {

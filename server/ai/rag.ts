@@ -81,9 +81,10 @@ export class RAGPipeline {
     workspaceId: string,
     query: string,
     onToken?: (token: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    userId?: number
   ): Promise<RAGResponse> {
-    const provider = getAIProvider();
+    const provider = await getAIProvider(userId);
     const { contextText, sources } = await this.retrieveContext(workspaceId, query);
 
     const systemPrompt = `You are MySpace AI, a calm, intelligent private workspace assistant.

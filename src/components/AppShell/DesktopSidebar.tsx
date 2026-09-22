@@ -65,7 +65,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
                 <MySpaceLogo size={24} />
               </div>
               <div className="brand-info">
-                <span className="brand-name">MySpace AI</span>
+                <span className="brand-name">MySpace<span className="brand-accent">AI</span></span>
                 <span className="brand-workspace">{CURRENT_USER.workspaceName}</span>
               </div>
             </div>

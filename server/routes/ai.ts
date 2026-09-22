@@ -110,7 +110,8 @@ router.post('/chat/stream', aiLimiter, async (req: AuthenticatedRequest, res: Re
           res.write(`data: ${JSON.stringify({ type: 'token', messageId: assistantMsgId, token })}\n\n`);
         }
       },
-      abortController.signal
+      abortController.signal,
+      userId
     );
 
     if (!abortController.signal.aborted && !res.writableEnded) {
@@ -267,7 +268,7 @@ router.post('/action', aiActionLimiter, async (req: AuthenticatedRequest, res: R
       res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Text is required for summarize action.' } });
       return;
     }
-    const provider = getAIProvider();
+    const provider = await getAIProvider(userId);
     const summary = await provider.summarize(text.slice(0, 2000));
     res.json({ success: true, data: { summary } });
     return;
