@@ -249,9 +249,20 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
                 )}
                 
                 <div className="ai-bubble-body">
-                  <div className="ai-bubble-markdown">
-                    <Markdown content={msg.content || ''} />
-                  </div>
+                  {msg.timestamp === 'Thinking...' && !msg.content ? (
+                    <div className="ai-thinking-indicator">
+                      <div className="thinking-dots">
+                        <span className="thinking-pulse-dot" />
+                        <span className="thinking-pulse-dot" />
+                        <span className="thinking-pulse-dot" />
+                      </div>
+                      <span className="thinking-text">Thinking & searching workspace...</span>
+                    </div>
+                  ) : (
+                    <div className="ai-bubble-markdown">
+                      <Markdown content={msg.content || ''} />
+                    </div>
+                  )}
 
                   {/* Sources Section */}
                   {msg.sources && msg.sources.length > 0 && (

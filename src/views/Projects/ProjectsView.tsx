@@ -313,15 +313,15 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
       {/* Create Project Modal */}
       {isCreateModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
-          <div className="project-create-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>New Engineering Initiative</h2>
+          <div className="task-add-modal project-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="add-modal-header">
+              <h2>New Project Initiative</h2>
               <button className="btn-icon" onClick={() => setIsCreateModalOpen(false)}>
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProjectSubmit} className="create-project-form">
+            <form onSubmit={handleCreateProjectSubmit} className="add-task-form">
               <div className="form-group">
                 <label>Project Name *</label>
                 <input 
@@ -380,11 +380,11 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   placeholder="Summarize initiative goals, technical constraints, and deliverables..."
-                  rows={3}
+                  rows={2}
                 />
               </div>
 
-              <div className="modal-actions-footer">
+              <div className="add-modal-footer">
                 <button 
                   type="button" 
                   className="btn btn-secondary" 

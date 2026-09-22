@@ -476,6 +476,18 @@ export const App: React.FC = () => {
       if (err.name === 'AbortError') {
         showToast('Generation stopped', 'info');
       } else {
+        const errorContent = err.message || 'AI streaming encountered an issue. Please try again.';
+        setAiMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  timestamp: 'Just now',
+                  content: `⚠️ **Unable to complete response**\n\n${errorContent}`,
+                }
+              : m
+          )
+        );
         showToast(err.message || 'AI streaming error', 'error');
       }
     } finally {

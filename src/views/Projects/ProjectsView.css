@@ -378,73 +378,128 @@
   max-width: 400px;
 }
 
-/* ── Create Project Modal ── */
-.project-create-modal {
+/* ── Create Project Modal (Strictly matches Task Modal UI) ── */
+.project-modal-box {
+  width: 100%;
+  max-width: 480px;
   background-color: var(--bg-surface-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
   padding: var(--space-6);
-  width: 100%;
-  max-width: 540px;
+  box-shadow: var(--shadow-lg);
+  animation: scaleUp var(--duration-fast) var(--ease-standard);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
-  animation: modalSlideUp 220ms cubic-bezier(0.16,1,0.3,1);
 }
 
-.modal-header {
+.project-modal-box .add-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: var(--space-4);
 }
 
-.modal-header h2 {
+.project-modal-box .add-modal-header h2 {
   font-size: var(--text-lg);
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
+  margin: 0;
 }
 
-.create-project-form {
+.project-modal-box .add-task-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
+.project-modal-box .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.project-modal-box .form-group label {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.project-modal-box .form-group input,
+.project-modal-box .form-group select {
+  height: 40px;
+  padding: 0 var(--space-3);
+  box-sizing: border-box;
+  font-size: var(--text-sm);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.project-modal-box .form-group input:focus,
+.project-modal-box .form-group select:focus,
+.project-modal-box .form-group textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary-subtle);
+}
+
+.project-modal-box .form-group textarea {
+  height: 70px;
+  min-height: 70px;
+  max-height: 90px;
+  padding: 8px var(--space-3);
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  resize: none;
+  outline: none;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.project-modal-box .form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
 .color-swatches-row {
   display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 2px;
 }
 
 .color-swatch-btn {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .color-swatch-btn:hover {
-  transform: scale(1.15);
+  transform: scale(1.18);
 }
 
 .color-swatch-btn.selected {
-  border-color: var(--text-primary);
-  box-shadow: 0 0 0 2px var(--bg-surface-elevated), 0 0 0 4px currentColor;
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
 }
 
-.modal-actions-footer {
+.project-modal-box .add-modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border-subtle);
-}
-
-@keyframes modalSlideUp {
-  from { opacity: 0; transform: translateY(16px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  margin-top: var(--space-2);
 }
 

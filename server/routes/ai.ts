@@ -41,18 +41,18 @@ router.post('/chat/stream', aiLimiter, async (req: AuthenticatedRequest, res: Re
   const userId = req.user!.userId;
   const db = getDatabase();
 
-  // IDOR check: if conversationId supplied, assert it belongs to this workspace
+  // Workspace check: if conversationId supplied, assert it belongs to this workspace.
+  // If not owned or stale (e.g. from previous session/demo), gracefully fall back to a new conversation
+  // instead of throwing 404 and breaking the streaming response.
   let activeConvId = conversationId;
   if (activeConvId) {
     const owned = await isOwnedByWorkspace('conversations', activeConvId, workspaceId);
     if (!owned) {
-      res.status(404).json({
-        success: false,
-        error: { code: 'NOT_FOUND', message: 'Conversation not found.' },
-      });
-      return;
+      activeConvId = undefined;
     }
-  } else {
+  }
+
+  if (!activeConvId) {
     // Create a new conversation for this message
     activeConvId = `conv-${crypto.randomBytes(6).toString('hex')}`;
     await db.execute({

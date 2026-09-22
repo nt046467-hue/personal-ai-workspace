@@ -3640,13 +3640,10 @@ router9.post("/chat/stream", aiLimiter, async (req, res) => {
   if (activeConvId) {
     const owned = await isOwnedByWorkspace("conversations", activeConvId, workspaceId);
     if (!owned) {
-      res.status(404).json({
-        success: false,
-        error: { code: "NOT_FOUND", message: "Conversation not found." }
-      });
-      return;
+      activeConvId = void 0;
     }
-  } else {
+  }
+  if (!activeConvId) {
     activeConvId = `conv-${crypto13.randomBytes(6).toString("hex")}`;
     await db.execute({
       sql: "INSERT INTO conversations (id, workspace_id, user_id, title) VALUES (?, ?, ?, ?)",
