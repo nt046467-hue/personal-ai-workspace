@@ -1,4 +1,4 @@
-import { Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { 
   verifyToken, 

@@ -2,9 +2,11 @@ import { createRequire } from 'module';
 import { getDatabase } from '../db';
 import { storageService } from '../storage';
 
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
-const mammoth = require('mammoth');
+// NOTE: pdf-parse and mammoth are loaded lazily inside extractText() to avoid
+// crashing the Vercel serverless function at cold-start. Both packages pull in
+// native/browser dependencies (DOMMatrix, @napi-rs/canvas) that don't exist in
+// the serverless runtime. A top-level require() would kill every route on boot.
+const _require = createRequire(import.meta.url);
 
 export interface ProcessedDocumentResult {
   text: string;
@@ -22,6 +24,8 @@ export class DocumentProcessor {
 
     if (mimeType === 'application/pdf' || ext === 'pdf') {
       try {
+        // Lazy load: only require pdf-parse when actually processing a PDF
+        const pdfParse = _require('pdf-parse');
         const data = await pdfParse(buffer);
         return {
           text: data.text || '',
@@ -38,6 +42,8 @@ export class DocumentProcessor {
       ext === 'docx'
     ) {
       try {
+        // Lazy load: only require mammoth when actually processing a DOCX
+        const mammoth = _require('mammoth');
         const result = await mammoth.extractRawText({ buffer });
         return {
           text: result.value || '',
