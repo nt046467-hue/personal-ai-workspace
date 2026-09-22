@@ -13,6 +13,8 @@ import { ToastContainer } from './components/Toast/Toast';
 import type { ToastMessage } from './components/Toast/Toast';
 import { AuthModal } from './components/Auth/AuthModal';
 import { ResetPasswordView } from './views/ResetPassword/ResetPasswordView';
+import { MobileNotificationSheet } from './components/Notifications/MobileNotificationSheet';
+import { useNotifications } from './hooks/useNotifications';
 
 import { HomeView } from './views/Home/HomeView';
 import { KnowledgeView } from './views/Knowledge/KnowledgeView';
@@ -106,6 +108,10 @@ export const App: React.FC = () => {
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [_conversations, setConversations] = useState<any[]>([]);
+
+  // Shared Notifications Controller — single source of truth across desktop and mobile
+  const [mobileNotificationsOpen, setMobileNotificationsOpen] = useState(false);
+  const notificationController = useNotifications(tasks, activities);
 
   // AI Streaming State
   const [isAiStreaming, setIsAiStreaming] = useState(false);
@@ -671,6 +677,8 @@ export const App: React.FC = () => {
             onOpenAdd={() => setAddSheetOpen(true)}
             theme={theme}
             onToggleTheme={handleToggleTheme}
+            onOpenNotifications={() => setMobileNotificationsOpen(true)}
+            unreadCount={notificationController.unreadCount}
             backAction={
               currentTab === 'note-editor' || currentTab === 'doc-viewer'
                 ? () => handleSelectTab('knowledge')
@@ -727,6 +735,7 @@ export const App: React.FC = () => {
               onOpenDoc={handleOpenDoc}
               tasks={tasks}
               activities={activities}
+              notificationController={notificationController}
             />
 
             <div className="desktop-canvas-row">
@@ -781,6 +790,18 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onOpenProfile={() => setProfileOpen(true)}
+      />
+
+      <MobileNotificationSheet
+        isOpen={mobileNotificationsOpen}
+        onClose={() => setMobileNotificationsOpen(false)}
+        notifications={notificationController.notifications}
+        onMarkAllAsRead={notificationController.markAllAsRead}
+        onMarkAsRead={notificationController.markAsRead}
+        onDismiss={notificationController.dismiss}
+        onNavigate={handleSelectTab}
+        onOpenNote={handleOpenNote}
+        onOpenDoc={handleOpenDoc}
       />
 
       {profileOpen && (

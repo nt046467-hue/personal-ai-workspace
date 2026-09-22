@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, Search, Sun, Moon } from 'lucide-react';
 import { MySpaceLogo } from '../Brand/MySpaceLogo';
+import { NotificationBellIcon } from '../Notifications/NotificationBellIcon';
 import type { NavigationTab } from './DesktopSidebar';
 import './MobileHeader.css';
 
@@ -13,6 +14,8 @@ interface MobileHeaderProps {
   onToggleTheme: () => void;
   backAction?: () => void;
   titleOverride?: string;
+  onOpenNotifications?: () => void;
+  unreadCount?: number;
 }
 
 export const MobileHeader: React.FC<MobileHeaderProps> = ({
@@ -23,6 +26,8 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   onToggleTheme,
   backAction,
   titleOverride,
+  onOpenNotifications,
+  unreadCount = 0,
 }) => {
   const isSubScreen = Boolean(backAction) || currentTab === 'note-editor' || currentTab === 'doc-viewer' || currentTab === 'project-detail';
 
@@ -81,6 +86,23 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
         >
           <Search size={19} />
         </button>
+
+        {onOpenNotifications && (
+          <button 
+            className="btn-icon mobile-action-btn mobile-notif-btn"
+            onClick={onOpenNotifications}
+            title={`Notifications (${unreadCount} unread)`}
+            aria-label={`Notifications, ${unreadCount} unread`}
+            id="mobile-notification-bell-btn"
+          >
+            <NotificationBellIcon size={19} />
+            {unreadCount > 0 && (
+              <span className="notification-badge" aria-hidden="true">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+        )}
         
         <button 
           className="btn-icon mobile-action-btn"

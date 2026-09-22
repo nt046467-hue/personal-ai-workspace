@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createClient, type Client } from '@libsql/client';
 import { config } from '../config';
+import { SCHEMA_SQL } from './schema';
 
 /**
  * Split raw SQL content into individual executable statements.
@@ -144,6 +145,17 @@ export async function runMigrations(existingClient?: Client): Promise<void> {
 
     const migrationsDir = path.resolve(process.cwd(), 'server', 'db', 'migrations');
     if (!fs.existsSync(migrationsDir)) {
+      console.warn('[Migrate] Migrations directory not found on disk. Applying embedded SCHEMA_SQL fallback...');
+      const statements = splitSqlStatements(SCHEMA_SQL);
+      for (const statement of statements) {
+        if (!statement.trim()) continue;
+        try {
+          await client.execute(statement);
+        } catch (err: any) {
+          // Ignore harmless duplicate table / index warnings in fallback
+          console.warn('[Migrate] Fallback schema statement note:', err?.message || err);
+        }
+      }
       return;
     }
 

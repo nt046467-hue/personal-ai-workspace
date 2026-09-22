@@ -66,3 +66,29 @@
   color: var(--text-primary);
   background-color: var(--bg-surface-active);
 }
+
+.mobile-notif-btn {
+  position: relative;
+}
+
+.mobile-header .notification-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border: 2px solid var(--bg-surface);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: -0.3px;
+  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.5);
+  animation: badgePop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}

@@ -52,7 +52,11 @@ export function createApp(): express.Application {
       origin: (origin, callback) => {
         // Allow requests with no origin (server-to-server, curl, test suites)
         if (!origin) return callback(null, true);
-        if (config.appOrigins.includes(origin) || (origin && origin.endsWith('.vercel.app'))) {
+        if (
+          config.appOrigins.includes(origin) || 
+          (origin && origin.endsWith('.vercel.app')) ||
+          (origin && (origin.endsWith('.nabint.com.np') || origin === 'https://myspace.nabint.com.np'))
+        ) {
           return callback(null, true);
         }
         // Deny unauthorized origin by omitting Access-Control-Allow-Origin

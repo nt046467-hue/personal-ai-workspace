@@ -3,25 +3,14 @@ import { createPortal } from 'react-dom';
 import { 
   Bell, 
   CheckCheck, 
-  FileText, 
-  CheckSquare, 
-  Cpu, 
-  X,
   ArrowRight
 } from 'lucide-react';
 import type { NavigationTab } from '../AppShell/DesktopSidebar';
+import { NotificationRow } from './NotificationRow';
+import type { NotificationItem } from '../../hooks/useNotifications';
 import './NotificationPopover.css';
 
-export interface NotificationItem {
-  id: string;
-  title: string;
-  description: string;
-  time: string;
-  type: 'task' | 'document' | 'note' | 'ai';
-  read: boolean;
-  targetId?: string;
-  targetTab?: NavigationTab;
-}
+export type { NotificationItem };
 
 interface NotificationPopoverProps {
   isOpen: boolean;
@@ -111,19 +100,6 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     onClose();
   };
 
-  const getNotificationIcon = (type: NotificationItem['type']) => {
-    switch (type) {
-      case 'task':
-        return <CheckSquare size={16} className="notif-icon-task" />;
-      case 'document':
-        return <FileText size={16} className="notif-icon-doc" />;
-      case 'note':
-        return <FileText size={16} className="notif-icon-note" />;
-      case 'ai':
-        return <Cpu size={15} className="notif-icon-ai" />;
-    }
-  };
-
   return createPortal(
     <div 
       className="notification-popover-card" 
@@ -159,34 +135,12 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
           </div>
         ) : (
           notifications.map((item) => (
-            <div
+            <NotificationRow
               key={item.id}
-              className={`notif-row-item ${item.read ? 'read' : 'unread'}`}
-              onClick={() => handleItemClick(item)}
-            >
-              <div className="notif-icon-wrapper">
-                {getNotificationIcon(item.type)}
-                {!item.read && <span className="notif-unread-dot" />}
-              </div>
-
-              <div className="notif-content-block">
-                <span className="notif-item-title">{item.title}</span>
-                <p className="notif-item-desc">{item.description}</p>
-                <span className="notif-item-time">{item.time}</span>
-              </div>
-
-              <button
-                className="btn-icon notif-dismiss-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDismiss(item.id);
-                }}
-                title="Dismiss"
-                aria-label="Dismiss notification"
-              >
-                <X size={14} />
-              </button>
-            </div>
+              item={item}
+              onClick={handleItemClick}
+              onDismiss={onDismiss}
+            />
           ))
         )}
       </div>

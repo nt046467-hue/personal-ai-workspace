@@ -131,6 +131,19 @@
   background-color: rgba(79, 70, 229, 0.14);
 }
 
+/* Overdue Urgent Visual Treatment */
+.notif-row-item.urgency-overdue {
+  border-left: 3px solid var(--color-danger, #ef4444);
+}
+
+.notif-row-item.urgency-overdue.unread {
+  background-color: var(--color-danger-subtle, rgba(239, 68, 68, 0.08));
+}
+
+.notif-row-item.urgency-overdue.unread:hover {
+  background-color: rgba(239, 68, 68, 0.14);
+}
+
 .notif-icon-wrapper {
   position: relative;
   width: 32px;
@@ -143,6 +156,15 @@
   justify-content: center;
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+.notif-icon-wrapper.is-overdue {
+  background-color: var(--color-danger-subtle, rgba(239, 68, 68, 0.12));
+  border-color: var(--color-danger-border, rgba(239, 68, 68, 0.28));
+}
+
+.notif-icon-overdue {
+  color: var(--color-danger, #ef4444);
 }
 
 .notif-icon-task {
@@ -172,19 +194,45 @@
   border: 2px solid var(--bg-surface-elevated);
 }
 
+.notif-unread-dot.is-overdue {
+  background-color: var(--color-danger, #ef4444);
+}
+
 .notif-content-block {
   flex: 1;
   min-width: 0;
 }
 
+.notif-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
 .notif-item-title {
-  display: block;
+  display: inline-block;
   font-size: 13px;
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
   line-height: 1.35;
-  margin-bottom: 2px;
   word-break: break-word;
+}
+
+.notif-item-title.is-overdue {
+  color: var(--color-danger, #ef4444);
+}
+
+.notif-overdue-pill {
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-danger-subtle, rgba(239, 68, 68, 0.15));
+  color: var(--color-danger, #ef4444);
+  border: 1px solid var(--color-danger-border, rgba(239, 68, 68, 0.3));
 }
 
 .notif-item-desc {
@@ -214,13 +262,25 @@
   transition: opacity var(--duration-fast) ease, color var(--duration-fast) ease, background-color var(--duration-fast) ease;
 }
 
-.notif-row-item:hover .notif-dismiss-btn {
+.notif-row-item:hover .notif-dismiss-btn,
+.notif-row-item:focus-within .notif-dismiss-btn {
   opacity: 1;
 }
 
 .notif-dismiss-btn:hover {
   color: var(--text-primary);
   background-color: var(--bg-surface-active);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .notif-dismiss-btn {
+    opacity: 0.75;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 /* Empty State */

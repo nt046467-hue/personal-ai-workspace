@@ -65,6 +65,8 @@ export const config: ServerConfig = {
       .filter(Boolean),
     ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
     ...(process.env.VERCEL_BRANCH_URL ? [`https://${process.env.VERCEL_BRANCH_URL}`] : []),
+    ...(process.env.VERCEL_PROJECT_PRODUCTION_URL ? [`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`] : []),
+    'https://myspace.nabint.com.np',
   ],
   seedDemo: process.env.SEED_DEMO === 'true',
   resendApiKey: process.env.RESEND_API_KEY || undefined,
