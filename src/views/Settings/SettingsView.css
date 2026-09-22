@@ -963,6 +963,157 @@
   color: #10b981;
 }
 
+.byok-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: opacity var(--duration-fast) ease;
+}
+
+.byok-link-btn:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.byok-key-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+  transition: opacity var(--duration-fast) ease;
+}
+
+.byok-key-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.byok-advanced-toggle {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1) 0;
+}
+
+.byok-advanced-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.byok-advanced-btn:hover {
+  color: var(--text-primary);
+}
+
+.byok-latency-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  font-weight: var(--fw-semibold);
+  margin-left: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Workspace Knowledge Index Section
+   -------------------------------------------------------------------------- */
+.byok-index-section {
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--bg-surface-secondary, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.byok-index-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.byok-index-icon {
+  color: var(--accent-primary);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.byok-index-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin: 0 0 2px 0;
+}
+
+.byok-index-desc {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.byok-index-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .byok-index-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.byok-index-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) ease;
+}
+
+.byok-index-card:hover {
+  border-color: var(--border-default);
+}
+
+.byok-card-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.byok-card-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.byok-card-value {
+  font-size: var(--text-base);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.byok-card-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
 .byok-footer {
   display: flex;
   align-items: center;
@@ -983,3 +1134,4 @@
     transform: rotate(360deg);
   }
 }
+

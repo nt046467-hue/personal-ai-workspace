@@ -5,6 +5,8 @@ import { validateBody } from '../middleware/validate';
 import { aiSettingsSchema } from '../validation/schemas';
 import { encryptApiKey, decryptApiKey, maskApiKey } from '../ai/keyEncryption';
 
+import { config } from '../config';
+
 const router = Router();
 router.use(requireAuth);
 
@@ -14,6 +16,8 @@ function getDefaultBaseUrl(provider: string): string {
       return 'https://generativelanguage.googleapis.com/v1beta/openai';
     case 'groq':
       return 'https://api.groq.com/openai/v1';
+    case 'openrouter':
+      return 'https://openrouter.ai/api/v1';
     case 'ollama':
       return 'http://localhost:11434/v1';
     case 'anthropic':
@@ -31,6 +35,7 @@ function getDefaultBaseUrl(provider: string): string {
  */
 router.get('/ai', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const userId = req.user!.userId;
+  const workspaceId = req.user!.workspaceId;
   const db = getDatabase();
 
   try {
@@ -38,6 +43,35 @@ router.get('/ai', async (req: AuthenticatedRequest, res: Response): Promise<void
       sql: 'SELECT provider, model, base_url, api_key_enc FROM user_ai_settings WHERE user_id = ?',
       args: [userId],
     });
+
+    const operatorConfigured = !!(config.aiApiKey && config.aiApiKey.trim().length > 0);
+
+    let indexStats = { notes: 0, tasks: 0, bookmarks: 0, projects: 0 };
+    if (workspaceId) {
+      try {
+        const statsRes = await db.execute({
+          sql: `
+            SELECT 
+              (SELECT COUNT(*) FROM knowledge_items WHERE workspace_id = ?) as notes,
+              (SELECT COUNT(*) FROM tasks WHERE workspace_id = ?) as tasks,
+              (SELECT COUNT(*) FROM bookmarks WHERE workspace_id = ?) as bookmarks,
+              (SELECT COUNT(*) FROM projects WHERE workspace_id = ?) as projects
+          `,
+          args: [workspaceId, workspaceId, workspaceId, workspaceId],
+        });
+        if (statsRes.rows.length > 0) {
+          const s = statsRes.rows[0] as any;
+          indexStats = {
+            notes: Number(s.notes || 0),
+            tasks: Number(s.tasks || 0),
+            bookmarks: Number(s.bookmarks || 0),
+            projects: Number(s.projects || 0),
+          };
+        }
+      } catch (err) {
+        // non-fatal
+      }
+    }
 
     if (rowRes.rows.length === 0 || !rowRes.rows[0].api_key_enc) {
       res.json({
@@ -48,6 +82,9 @@ router.get('/ai', async (req: AuthenticatedRequest, res: Response): Promise<void
           model: null,
           baseUrl: null,
           maskedKey: null,
+          dailyCap: config.aiDailyCapDefault,
+          operatorConfigured,
+          indexStats,
         },
       });
       return;
@@ -70,6 +107,9 @@ router.get('/ai', async (req: AuthenticatedRequest, res: Response): Promise<void
         model: row.model ? String(row.model) : null,
         baseUrl: row.base_url ? String(row.base_url) : null,
         maskedKey,
+        dailyCap: config.aiDailyCapDefault,
+        operatorConfigured,
+        indexStats,
       },
     });
   } catch (err: any) {
@@ -94,48 +134,99 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
     ? String(baseUrl).trim().replace(/\/$/, '')
     : getDefaultBaseUrl(provider);
 
-  // 1. Live "test connection" call (1-token completion)
+  const targetModel = (model && String(model).trim().length > 0)
+    ? String(model).trim()
+    : (provider === 'gemini' 
+        ? 'gemini-1.5-flash' 
+        : provider === 'groq' 
+        ? 'llama-3.3-70b-versatile' 
+        : provider === 'openrouter'
+        ? 'anthropic/claude-3.5-sonnet'
+        : 'gpt-4o-mini');
+
+  // Resolve effective API key: use provided key, or fallback to previously stored key
+  let effectiveApiKey = apiKey && String(apiKey).trim().length > 0 ? String(apiKey).trim() : '';
+
+  if (!effectiveApiKey) {
+    const existingRes = await db.execute({
+      sql: 'SELECT api_key_enc FROM user_ai_settings WHERE user_id = ?',
+      args: [userId],
+    });
+    if (existingRes.rows.length > 0 && existingRes.rows[0].api_key_enc) {
+      try {
+        effectiveApiKey = decryptApiKey(String(existingRes.rows[0].api_key_enc));
+      } catch (err) {
+        console.error('[Settings] Error decrypting existing key:', err);
+      }
+    }
+  }
+
+  if (!effectiveApiKey && provider !== 'ollama') {
+    res.status(400).json({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Please provide a valid API key for this provider.' },
+    });
+    return;
+  }
+
+  if (!effectiveApiKey && provider === 'ollama') {
+    effectiveApiKey = 'ollama';
+  }
+
+  // 1. Live "test connection" call (minimal completion test)
   let testUrl = `${targetBaseUrl}/chat/completions`;
   let headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
+    'Authorization': `Bearer ${effectiveApiKey}`,
   };
   let body: any = {
-    model,
+    model: targetModel,
     messages: [{ role: 'user', content: 'hi' }],
-    max_tokens: 1,
+    max_tokens: 5,
   };
 
   if (provider === 'anthropic' && targetBaseUrl.includes('anthropic.com')) {
     testUrl = `${targetBaseUrl}/messages`;
     headers = {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
+      'x-api-key': effectiveApiKey,
       'anthropic-version': '2023-06-01',
     };
     body = {
-      model,
-      max_tokens: 1,
+      model: targetModel,
+      max_tokens: 5,
       messages: [{ role: 'user', content: 'hi' }],
     };
   }
 
+  let latencyMs = 0;
   try {
+    const startTime = Date.now();
     const testRes = await fetch(testUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(12000),
     });
+    latencyMs = Math.round(Date.now() - startTime);
 
     if (!testRes.ok) {
       const errorBody = await testRes.text().catch(() => '');
+      let parsedMsg = '';
+      try {
+        const parsed = JSON.parse(errorBody);
+        parsedMsg = parsed.error?.message || parsed.message || '';
+      } catch {
+        parsedMsg = errorBody.slice(0, 140);
+      }
       console.warn(`[Settings AI Test Failed] Status ${testRes.status}:`, errorBody);
       res.status(400).json({
         success: false,
         error: {
           code: 'PROVIDER_TEST_FAILED',
-          message: "Couldn't connect with these settings — check your key and model name.",
+          message: parsedMsg 
+            ? `Upstream error (${testRes.status}): ${parsedMsg}`
+            : `Could not connect to ${provider} (HTTP ${testRes.status}). Please check your API key and model name.`,
         },
       });
       return;
@@ -146,7 +237,9 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
       success: false,
       error: {
         code: 'PROVIDER_TEST_FAILED',
-        message: "Couldn't connect with these settings — check your key and model name.",
+        message: testErr.name === 'TimeoutError'
+          ? 'Connection timed out. Please check your base URL and network connectivity.'
+          : `Connection test failed: ${testErr.message || 'Check your key and base URL.'}`,
       },
     });
     return;
@@ -154,7 +247,7 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
 
   // 2. Encrypt and upsert into user_ai_settings
   try {
-    const encryptedKey = encryptApiKey(apiKey);
+    const encryptedKey = encryptApiKey(effectiveApiKey);
     await db.execute({
       sql: `
         INSERT INTO user_ai_settings (user_id, provider, model, base_url, api_key_enc, updated_at)
@@ -166,7 +259,7 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
           api_key_enc = excluded.api_key_enc,
           updated_at = datetime('now')
       `,
-      args: [userId, provider, model, targetBaseUrl, encryptedKey],
+      args: [userId, provider, targetModel, targetBaseUrl, encryptedKey],
     });
 
     res.json({
@@ -175,19 +268,18 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
       data: {
         hasCustomKey: true,
         provider,
-        model,
+        model: targetModel,
         baseUrl: targetBaseUrl,
-        maskedKey: maskApiKey(apiKey),
+        maskedKey: maskApiKey(effectiveApiKey),
+        latencyMs,
       },
     });
-  } catch (encErr: any) {
-    console.error('[Settings AI Encryption Error]', encErr);
+    return;
+  } catch (err: any) {
+    console.error('[Settings] Error saving user AI key:', err);
     res.status(500).json({
       success: false,
-      error: {
-        code: 'ENCRYPTION_ERROR',
-        message: encErr.message || 'Failed to encrypt API key. Ensure APP_ENCRYPTION_KEY is configured.',
-      },
+      error: { code: 'INTERNAL_ERROR', message: 'Failed to securely store AI key.' },
     });
   }
 });

@@ -1016,10 +1016,10 @@ var searchQuerySchema = z.object({
   type: z.string().max(50).optional()
 });
 var aiSettingsSchema = z.object({
-  provider: z.enum(["openai", "anthropic", "gemini", "groq", "ollama"]),
-  model: z.string().min(1).max(100),
-  baseUrl: z.string().url().max(300).optional().or(z.literal("")),
-  apiKey: z.string().min(10).max(500)
+  provider: z.enum(["openai", "anthropic", "gemini", "groq", "ollama", "openrouter", "custom"]),
+  model: z.string().max(100).optional().or(z.literal("")),
+  baseUrl: z.string().url("Invalid URL format.").max(300).optional().or(z.literal("")),
+  apiKey: z.string().max(500).optional().or(z.literal(""))
 });
 
 // server/email/resend.ts
@@ -3231,30 +3231,54 @@ var SearchModeProvider = class {
     const res = await this.stream(prompt, context);
     return res.fullText;
   }
-  async stream(_prompt, context, onToken, _options, signal) {
-    let responseText;
-    if (context && context.trim().length > 0) {
-      responseText = `Here are the most relevant passages retrieved from your workspace:
+  async stream(prompt, context, onToken, _options, signal) {
+    let responseText = "";
+    const cleanPrompt = prompt.trim().toLowerCase();
+    if (cleanPrompt === "hi" || cleanPrompt === "hello" || cleanPrompt === "hey" || cleanPrompt.startsWith("who are you") || cleanPrompt.startsWith("what can you do")) {
+      responseText = `### \u{1F44B} Hello! I am your MySpace AI Assistant.
 
-${context}
+I am connected directly to your private workspace. Here is what I can do:
+
+- **Search & Reference:** Ask questions about any architectural specs, meeting notes, or project requirements.
+- **Task & Milestone Tracking:** Ask about deadlines or open items.
+- **Custom AI Model:** You can connect your preferred AI provider (Google Gemini, OpenAI, Groq, or Claude) in **Settings \u2192 AI Engine** for complete conversational synthesis.
+
+How can I help you in your workspace today?`;
+    } else if (context && context.trim().length > 0) {
+      const docRegex = /<untrusted_document\s+id="([^"]+)"\s+title="([^"]+)"\s+type="([^"]+)">([\s\S]*?)<\/untrusted_document>/g;
+      let match;
+      const formattedDocs = [];
+      while ((match = docRegex.exec(context)) !== null) {
+        const title = match[2];
+        const type = match[3];
+        const excerpt = match[4].trim();
+        formattedDocs.push(`#### \u{1F4C4} ${title} *(${type})*
+> ${excerpt.replace(/\n/g, "\n> ")}`);
+      }
+      const body = formattedDocs.length > 0 ? formattedDocs.join("\n\n") : context;
+      responseText = `### Workspace Knowledge Matches
+
+Here are the most relevant sections retrieved from your workspace:
+
+${body}
 
 ---
-> **Connect an AI provider in Settings for written answers.**`;
+\u{1F4A1} *Tip: Connect an API key (Gemini, Groq, or OpenAI) in **Settings \u2192 AI Engine** for full conversational reasoning and generation.*`;
     } else {
-      responseText = `I couldn't find anything matching your question in your workspace notes or documents.
+      responseText = `I searched your workspace notes, documents, and tasks, but could not find a direct match for: **"${prompt.trim()}"**.
 
----
-> **Connect an AI provider in Settings for written answers.**`;
+You can:
+1. Upload or create notes in **Knowledge**.
+2. Create tasks with relevant titles in **Tasks**.
+3. Connect an AI provider in **Settings \u2192 AI Engine** to enable general reasoning.`;
     }
     const words = responseText.split(" ");
-    let emitted = "";
     for (let i = 0; i < words.length; i++) {
       if (signal?.aborted) break;
       const chunk = (i === 0 ? "" : " ") + words[i];
-      emitted += chunk;
       if (onToken) {
         onToken(chunk);
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 15));
       }
     }
     return { fullText: responseText, sources: [], actions: [] };
@@ -3909,6 +3933,8 @@ function getDefaultBaseUrl(provider) {
       return "https://generativelanguage.googleapis.com/v1beta/openai";
     case "groq":
       return "https://api.groq.com/openai/v1";
+    case "openrouter":
+      return "https://openrouter.ai/api/v1";
     case "ollama":
       return "http://localhost:11434/v1";
     case "anthropic":
@@ -3920,12 +3946,39 @@ function getDefaultBaseUrl(provider) {
 }
 router11.get("/ai", async (req, res) => {
   const userId = req.user.userId;
+  const workspaceId = req.user.workspaceId;
   const db = getDatabase();
   try {
     const rowRes = await db.execute({
       sql: "SELECT provider, model, base_url, api_key_enc FROM user_ai_settings WHERE user_id = ?",
       args: [userId]
     });
+    const operatorConfigured = !!(config.aiApiKey && config.aiApiKey.trim().length > 0);
+    let indexStats = { notes: 0, tasks: 0, bookmarks: 0, projects: 0 };
+    if (workspaceId) {
+      try {
+        const statsRes = await db.execute({
+          sql: `
+            SELECT 
+              (SELECT COUNT(*) FROM knowledge_items WHERE workspace_id = ?) as notes,
+              (SELECT COUNT(*) FROM tasks WHERE workspace_id = ?) as tasks,
+              (SELECT COUNT(*) FROM bookmarks WHERE workspace_id = ?) as bookmarks,
+              (SELECT COUNT(*) FROM projects WHERE workspace_id = ?) as projects
+          `,
+          args: [workspaceId, workspaceId, workspaceId, workspaceId]
+        });
+        if (statsRes.rows.length > 0) {
+          const s = statsRes.rows[0];
+          indexStats = {
+            notes: Number(s.notes || 0),
+            tasks: Number(s.tasks || 0),
+            bookmarks: Number(s.bookmarks || 0),
+            projects: Number(s.projects || 0)
+          };
+        }
+      } catch (err) {
+      }
+    }
     if (rowRes.rows.length === 0 || !rowRes.rows[0].api_key_enc) {
       res.json({
         success: true,
@@ -3934,7 +3987,10 @@ router11.get("/ai", async (req, res) => {
           provider: null,
           model: null,
           baseUrl: null,
-          maskedKey: null
+          maskedKey: null,
+          dailyCap: config.aiDailyCapDefault,
+          operatorConfigured,
+          indexStats
         }
       });
       return;
@@ -3954,7 +4010,10 @@ router11.get("/ai", async (req, res) => {
         provider: row.provider ? String(row.provider) : null,
         model: row.model ? String(row.model) : null,
         baseUrl: row.base_url ? String(row.base_url) : null,
-        maskedKey
+        maskedKey,
+        dailyCap: config.aiDailyCapDefault,
+        operatorConfigured,
+        indexStats
       }
     });
   } catch (err) {
@@ -3970,44 +4029,79 @@ router11.put("/ai", validateBody(aiSettingsSchema), async (req, res) => {
   const { provider, model, baseUrl, apiKey } = req.body;
   const db = getDatabase();
   const targetBaseUrl = baseUrl && String(baseUrl).trim().length > 0 ? String(baseUrl).trim().replace(/\/$/, "") : getDefaultBaseUrl(provider);
+  const targetModel = model && String(model).trim().length > 0 ? String(model).trim() : provider === "gemini" ? "gemini-1.5-flash" : provider === "groq" ? "llama-3.3-70b-versatile" : provider === "openrouter" ? "anthropic/claude-3.5-sonnet" : "gpt-4o-mini";
+  let effectiveApiKey = apiKey && String(apiKey).trim().length > 0 ? String(apiKey).trim() : "";
+  if (!effectiveApiKey) {
+    const existingRes = await db.execute({
+      sql: "SELECT api_key_enc FROM user_ai_settings WHERE user_id = ?",
+      args: [userId]
+    });
+    if (existingRes.rows.length > 0 && existingRes.rows[0].api_key_enc) {
+      try {
+        effectiveApiKey = decryptApiKey(String(existingRes.rows[0].api_key_enc));
+      } catch (err) {
+        console.error("[Settings] Error decrypting existing key:", err);
+      }
+    }
+  }
+  if (!effectiveApiKey && provider !== "ollama") {
+    res.status(400).json({
+      success: false,
+      error: { code: "VALIDATION_ERROR", message: "Please provide a valid API key for this provider." }
+    });
+    return;
+  }
+  if (!effectiveApiKey && provider === "ollama") {
+    effectiveApiKey = "ollama";
+  }
   let testUrl = `${targetBaseUrl}/chat/completions`;
   let headers = {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${apiKey}`
+    "Authorization": `Bearer ${effectiveApiKey}`
   };
   let body = {
-    model,
+    model: targetModel,
     messages: [{ role: "user", content: "hi" }],
-    max_tokens: 1
+    max_tokens: 5
   };
   if (provider === "anthropic" && targetBaseUrl.includes("anthropic.com")) {
     testUrl = `${targetBaseUrl}/messages`;
     headers = {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
+      "x-api-key": effectiveApiKey,
       "anthropic-version": "2023-06-01"
     };
     body = {
-      model,
-      max_tokens: 1,
+      model: targetModel,
+      max_tokens: 5,
       messages: [{ role: "user", content: "hi" }]
     };
   }
+  let latencyMs = 0;
   try {
+    const startTime = Date.now();
     const testRes = await fetch(testUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(1e4)
+      signal: AbortSignal.timeout(12e3)
     });
+    latencyMs = Math.round(Date.now() - startTime);
     if (!testRes.ok) {
       const errorBody = await testRes.text().catch(() => "");
+      let parsedMsg = "";
+      try {
+        const parsed = JSON.parse(errorBody);
+        parsedMsg = parsed.error?.message || parsed.message || "";
+      } catch {
+        parsedMsg = errorBody.slice(0, 140);
+      }
       console.warn(`[Settings AI Test Failed] Status ${testRes.status}:`, errorBody);
       res.status(400).json({
         success: false,
         error: {
           code: "PROVIDER_TEST_FAILED",
-          message: "Couldn't connect with these settings \u2014 check your key and model name."
+          message: parsedMsg ? `Upstream error (${testRes.status}): ${parsedMsg}` : `Could not connect to ${provider} (HTTP ${testRes.status}). Please check your API key and model name.`
         }
       });
       return;
@@ -4018,13 +4112,13 @@ router11.put("/ai", validateBody(aiSettingsSchema), async (req, res) => {
       success: false,
       error: {
         code: "PROVIDER_TEST_FAILED",
-        message: "Couldn't connect with these settings \u2014 check your key and model name."
+        message: testErr.name === "TimeoutError" ? "Connection timed out. Please check your base URL and network connectivity." : `Connection test failed: ${testErr.message || "Check your key and base URL."}`
       }
     });
     return;
   }
   try {
-    const encryptedKey = encryptApiKey(apiKey);
+    const encryptedKey = encryptApiKey(effectiveApiKey);
     await db.execute({
       sql: `
         INSERT INTO user_ai_settings (user_id, provider, model, base_url, api_key_enc, updated_at)
@@ -4036,7 +4130,7 @@ router11.put("/ai", validateBody(aiSettingsSchema), async (req, res) => {
           api_key_enc = excluded.api_key_enc,
           updated_at = datetime('now')
       `,
-      args: [userId, provider, model, targetBaseUrl, encryptedKey]
+      args: [userId, provider, targetModel, targetBaseUrl, encryptedKey]
     });
     res.json({
       success: true,
@@ -4044,19 +4138,18 @@ router11.put("/ai", validateBody(aiSettingsSchema), async (req, res) => {
       data: {
         hasCustomKey: true,
         provider,
-        model,
+        model: targetModel,
         baseUrl: targetBaseUrl,
-        maskedKey: maskApiKey(apiKey)
+        maskedKey: maskApiKey(effectiveApiKey),
+        latencyMs
       }
     });
-  } catch (encErr) {
-    console.error("[Settings AI Encryption Error]", encErr);
+    return;
+  } catch (err) {
+    console.error("[Settings] Error saving user AI key:", err);
     res.status(500).json({
       success: false,
-      error: {
-        code: "ENCRYPTION_ERROR",
-        message: encErr.message || "Failed to encrypt API key. Ensure APP_ENCRYPTION_KEY is configured."
-      }
+      error: { code: "INTERNAL_ERROR", message: "Failed to securely store AI key." }
     });
   }
 });

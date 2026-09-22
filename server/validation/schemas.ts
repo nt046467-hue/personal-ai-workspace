@@ -162,9 +162,9 @@ export const searchQuerySchema = z.object({
 // AI Settings Schema (BYOK)
 // ============================================================================
 export const aiSettingsSchema = z.object({
-  provider: z.enum(['openai', 'anthropic', 'gemini', 'groq', 'ollama']),
-  model: z.string().min(1).max(100),
-  baseUrl: z.string().url().max(300).optional().or(z.literal('')),
-  apiKey: z.string().min(10).max(500),
+  provider: z.enum(['openai', 'anthropic', 'gemini', 'groq', 'ollama', 'openrouter', 'custom']),
+  model: z.string().max(100).optional().or(z.literal('')),
+  baseUrl: z.string().url('Invalid URL format.').max(300).optional().or(z.literal('')),
+  apiKey: z.string().max(500).optional().or(z.literal('')),
 });
 

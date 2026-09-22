@@ -247,6 +247,18 @@ class ApiService {
     await this.request(`/activities/${id}`, { method: 'DELETE' });
   }
 
+  // --- Bookmarks APIs ---
+  public async getBookmarks(): Promise<any[]> {
+    return this.request<any[]>('/bookmarks');
+  }
+
+  public async createBookmark(data: { url: string; title?: string; description?: string; projectId?: string; tags?: string[] }): Promise<any> {
+    return this.request<any>('/bookmarks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // --- Search APIs ---
   public async searchWorkspace(query: string, category: string = 'all'): Promise<any[]> {
     if (!query.trim()) return [];
@@ -276,6 +288,58 @@ class ApiService {
   // --- AI APIs ---
   public async getAIBrief(): Promise<{ brief: string; taskCount: number; projectCount: number }> {
     return this.request<{ brief: string; taskCount: number; projectCount: number }>('/ai/brief');
+  }
+
+  public async getAISettings(): Promise<{
+    hasCustomKey: boolean;
+    provider: string | null;
+    model: string | null;
+    baseUrl: string | null;
+    maskedKey: string | null;
+    dailyCap?: number;
+    operatorConfigured?: boolean;
+    indexStats?: { notes: number; tasks: number; bookmarks: number; projects: number };
+  }> {
+    return this.request<{
+      hasCustomKey: boolean;
+      provider: string | null;
+      model: string | null;
+      baseUrl: string | null;
+      maskedKey: string | null;
+      dailyCap?: number;
+      operatorConfigured?: boolean;
+      indexStats?: { notes: number; tasks: number; bookmarks: number; projects: number };
+    }>('/settings/ai');
+  }
+
+  public async saveAISettings(settings: {
+    provider: string;
+    apiKey: string;
+    baseUrl?: string;
+    model?: string;
+  }): Promise<{
+    hasCustomKey: boolean;
+    provider: string;
+    model: string;
+    baseUrl: string;
+    maskedKey: string;
+    latencyMs?: number;
+  }> {
+    return this.request<{
+      hasCustomKey: boolean;
+      provider: string;
+      model: string;
+      baseUrl: string;
+      maskedKey: string;
+      latencyMs?: number;
+    }>('/settings/ai', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  }
+
+  public async deleteAISettings(): Promise<void> {
+    await this.request('/settings/ai', { method: 'DELETE' });
   }
 
   /**

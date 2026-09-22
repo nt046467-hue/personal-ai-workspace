@@ -50,37 +50,62 @@ export class SearchModeProvider implements AIProvider {
   }
 
   public async stream(
-    _prompt: string,
+    prompt: string,
     context?: string,
     onToken?: (token: string) => void,
     _options?: AICompletionOptions,
     signal?: AbortSignal
   ): Promise<{ fullText: string; sources: AISourceCitation[]; actions: AIActionItem[] }> {
-    let responseText: string;
+    let responseText = '';
+    const cleanPrompt = prompt.trim().toLowerCase();
 
-    if (context && context.trim().length > 0) {
+    // Friendly greeting handler for offline / search mode
+    if (cleanPrompt === 'hi' || cleanPrompt === 'hello' || cleanPrompt === 'hey' || cleanPrompt.startsWith('who are you') || cleanPrompt.startsWith('what can you do')) {
       responseText =
-        `Here are the most relevant passages retrieved from your workspace:\n\n` +
-        `${context}\n\n` +
+        `### 👋 Hello! I am your MySpace AI Assistant.\n\n` +
+        `I am connected directly to your private workspace. Here is what I can do:\n\n` +
+        `- **Search & Reference:** Ask questions about any architectural specs, meeting notes, or project requirements.\n` +
+        `- **Task & Milestone Tracking:** Ask about deadlines or open items.\n` +
+        `- **Custom AI Model:** You can connect your preferred AI provider (Google Gemini, OpenAI, Groq, or Claude) in **Settings → AI Engine** for complete conversational synthesis.\n\n` +
+        `How can I help you in your workspace today?`;
+    } else if (context && context.trim().length > 0) {
+      // Parse out the untrusted_document blocks and format them into readable markdown cards
+      const docRegex = /<untrusted_document\s+id="([^"]+)"\s+title="([^"]+)"\s+type="([^"]+)">([\s\S]*?)<\/untrusted_document>/g;
+      let match;
+      const formattedDocs: string[] = [];
+
+      while ((match = docRegex.exec(context)) !== null) {
+        const title = match[2];
+        const type = match[3];
+        const excerpt = match[4].trim();
+        formattedDocs.push(`#### 📄 ${title} *(${type})*\n> ${excerpt.replace(/\n/g, '\n> ')}`);
+      }
+
+      const body = formattedDocs.length > 0 ? formattedDocs.join('\n\n') : context;
+
+      responseText =
+        `### Workspace Knowledge Matches\n\n` +
+        `Here are the most relevant sections retrieved from your workspace:\n\n` +
+        `${body}\n\n` +
         `---\n` +
-        `> **Connect an AI provider in Settings for written answers.**`;
+        `💡 *Tip: Connect an API key (Gemini, Groq, or OpenAI) in **Settings → AI Engine** for full conversational reasoning and generation.*`;
     } else {
       responseText =
-        `I couldn't find anything matching your question in your workspace notes or documents.\n\n` +
-        `---\n` +
-        `> **Connect an AI provider in Settings for written answers.**`;
+        `I searched your workspace notes, documents, and tasks, but could not find a direct match for: **"${prompt.trim()}"**.\n\n` +
+        `You can:\n` +
+        `1. Upload or create notes in **Knowledge**.\n` +
+        `2. Create tasks with relevant titles in **Tasks**.\n` +
+        `3. Connect an AI provider in **Settings → AI Engine** to enable general reasoning.`;
     }
 
     // Stream out words progressively
     const words = responseText.split(' ');
-    let emitted = '';
     for (let i = 0; i < words.length; i++) {
       if (signal?.aborted) break;
       const chunk = (i === 0 ? '' : ' ') + words[i];
-      emitted += chunk;
       if (onToken) {
         onToken(chunk);
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 15));
       }
     }
 

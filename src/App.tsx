@@ -420,6 +420,8 @@ export const App: React.FC = () => {
     abortControllerRef.current = controller;
     setIsAiStreaming(true);
 
+    let currentTargetId = assistantMsgId;
+
     try {
       await api.streamAIChat(
         text, 
@@ -430,22 +432,31 @@ export const App: React.FC = () => {
             if (data.conversationId) {
               setActiveConversationId(data.conversationId);
             }
+            if (data.assistantMessageId) {
+              const serverId = data.assistantMessageId;
+              setAiMessages(prev =>
+                prev.map(m =>
+                  m.id === currentTargetId || m.id === assistantMsgId
+                    ? { ...m, id: serverId }
+                    : m
+                )
+              );
+              currentTargetId = serverId;
+            }
           },
           onToken: (token, msgId) => {
-            const targetId = msgId || assistantMsgId;
             setAiMessages(prev =>
               prev.map(m =>
-                m.id === targetId
+                (m.id === currentTargetId || m.id === assistantMsgId || (msgId && m.id === msgId))
                   ? { ...m, timestamp: 'Just now', content: m.content + token }
                   : m
               )
             );
           },
           onDone: (result) => {
-            const targetId = result.messageId || assistantMsgId;
             setAiMessages(prev =>
               prev.map(m =>
-                m.id === targetId
+                (m.id === currentTargetId || m.id === assistantMsgId || (result.messageId && m.id === result.messageId))
                   ? {
                       ...m,
                       timestamp: 'Just now',
@@ -459,11 +470,10 @@ export const App: React.FC = () => {
             api.getConversations().then(c => setConversations(c)).catch(() => {});
           },
           onError: (errMsg, msgId) => {
-            const targetId = msgId || assistantMsgId;
             setAiMessages(prev =>
               prev.map(m =>
-                m.id === targetId
-                  ? { ...m, timestamp: 'Just now', content: 'AI request failed. Please try again.' }
+                (m.id === currentTargetId || m.id === assistantMsgId || (msgId && m.id === msgId))
+                  ? { ...m, timestamp: 'Just now', content: `⚠️ ${errMsg}` }
                   : m
               )
             );
@@ -479,7 +489,7 @@ export const App: React.FC = () => {
         const errorContent = err.message || 'AI streaming encountered an issue. Please try again.';
         setAiMessages(prev =>
           prev.map(m =>
-            m.id === assistantMsgId
+            (m.id === currentTargetId || m.id === assistantMsgId)
               ? {
                   ...m,
                   timestamp: 'Just now',
