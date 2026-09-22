@@ -57,7 +57,7 @@ export const config: ServerConfig = {
   aiApiKey: process.env.AI_API_KEY || undefined,
   aiModel: process.env.AI_MODEL || undefined,
   aiBaseUrl: process.env.AI_BASE_URL || undefined,
-  aiDailyCapDefault: parseInt(process.env.AI_DAILY_CAP_DEFAULT || '20', 10),
+  aiDailyCapDefault: parseInt(process.env.AI_DAILY_CAP_DEFAULT || '500', 10),
   appOrigins: [
     ...(process.env.APP_ORIGIN || 'http://localhost:5173,http://localhost:3001,http://127.0.0.1:5173')
       .split(',')

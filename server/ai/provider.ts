@@ -375,7 +375,7 @@ export async function getAIProvider(userId?: string): Promise<AIProvider> {
   // ── 2 & 3. Operator key with daily cap ────────────────────────────────────
   if (config.aiApiKey && config.aiApiKey.trim().length > 0) {
     if (userId !== undefined) {
-      const { allowed } = await incrementAndCheckDailyUsage(userId as any, config.aiDailyCapDefault);
+      const { allowed } = await incrementAndCheckDailyUsage(userId, config.aiDailyCapDefault);
       if (!allowed) {
         console.warn(`[AI Provider] Daily cap (${config.aiDailyCapDefault}) reached for user ${userId}; returning SearchModeProvider.`);
         return new SearchModeProvider();

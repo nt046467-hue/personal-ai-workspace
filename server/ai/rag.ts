@@ -82,7 +82,7 @@ export class RAGPipeline {
     query: string,
     onToken?: (token: string) => void,
     signal?: AbortSignal,
-    userId?: number
+    userId?: string
   ): Promise<RAGResponse> {
     const provider = await getAIProvider(userId);
     const { contextText, sources } = await this.retrieveContext(workspaceId, query);

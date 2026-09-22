@@ -3,10 +3,13 @@ import { config } from '../config';
 
 /**
  * Increment and check daily usage for a user against the shared operator key.
- * Returns true if the user is within their allowed daily cap, or false if the user
- * has exceeded their cap for today (UTC).
+ * Returns { allowed: true } if the user is within their allowed daily cap.
+ * Returns { allowed: false } if the cap has been exceeded for today (UTC).
+ *
+ * NOTE: This cap is intentionally generous (default 500) for personal workspace use.
+ * Set AI_DAILY_CAP_DEFAULT env var to a lower number for multi-tenant deployments.
  */
-export async function incrementAndCheckDailyUsage(userId: string, cap?: number | null): Promise<boolean> {
+export async function incrementAndCheckDailyUsage(userId: string, cap?: number | null): Promise<{ allowed: boolean }> {
   const db = getDatabase();
   const effectiveCap = cap ?? config.aiDailyCapDefault;
   const today = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD' (UTC)
@@ -20,7 +23,7 @@ export async function incrementAndCheckDailyUsage(userId: string, cap?: number |
 
     const currentCount = checkRes.rows.length > 0 ? Number(checkRes.rows[0].request_count) : 0;
     if (currentCount >= effectiveCap) {
-      return false;
+      return { allowed: false };
     }
 
     // 2. Increment atomically
@@ -34,10 +37,11 @@ export async function incrementAndCheckDailyUsage(userId: string, cap?: number |
       args: [userId, today],
     });
 
-    return true;
+    return { allowed: true };
   } catch (err) {
     console.error('[AI Usage] Error updating daily usage:', err);
     // On unexpected DB errors, do not block the user
-    return true;
+    return { allowed: true };
   }
 }
+
