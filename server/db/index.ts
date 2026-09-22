@@ -11,13 +11,23 @@ let initPromise: Promise<void> | null = null;
 
 export function getDatabase(): Client {
   if (!dbClient) {
-    if (!fs.existsSync(config.storageDir)) {
-      fs.mkdirSync(config.storageDir, { recursive: true });
+    let dbUrl = config.tursoDatabaseUrl;
+
+    if (!dbUrl) {
+      // On Vercel the build filesystem is read-only; only /tmp is writable at runtime.
+      // Fall back to /tmp/myspace.sqlite so a missing TURSO_DATABASE_URL doesn't crash.
+      const localPath = process.env.VERCEL ? '/tmp/myspace.sqlite' : config.dbPath;
+      if (!process.env.VERCEL) {
+        // Only try to create the storage directory for local dev
+        if (!fs.existsSync(config.storageDir)) {
+          fs.mkdirSync(config.storageDir, { recursive: true });
+        }
+      }
+      dbUrl = `file:${localPath}`;
     }
 
-    const url = config.tursoDatabaseUrl || `file:${config.dbPath}`;
     dbClient = createClient({
-      url,
+      url: dbUrl,
       authToken: config.tursoAuthToken,
     });
   }

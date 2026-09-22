@@ -107,7 +107,22 @@ export function splitSqlStatements(sql: string): string[] {
 }
 
 export async function runMigrations(existingClient?: Client): Promise<void> {
-  const url = config.tursoDatabaseUrl || `file:${config.dbPath}`;
+  // On Vercel builds the filesystem is read-only. When TURSO_DATABASE_URL is not
+  // yet configured (e.g. during the build step), skip file-based migrations and
+  // let them run at cold-start through initDatabase() instead.
+  const isVercelBuild = !!process.env.VERCEL && !config.tursoDatabaseUrl;
+  if (isVercelBuild) {
+    console.log('[Migrate] Vercel build detected without TURSO_DATABASE_URL — skipping file-based migration (will run at cold-start).');
+    return;
+  }
+
+  // Prefer Turso remote URL; fall back to a writable SQLite path.
+  // On Vercel at runtime the only writable path is /tmp.
+  let localFallback = config.dbPath;
+  if (process.env.VERCEL && !config.tursoDatabaseUrl) {
+    localFallback = '/tmp/myspace.sqlite';
+  }
+  const url = config.tursoDatabaseUrl || `file:${localFallback}`;
   const client = existingClient || createClient({
     url,
     authToken: config.tursoAuthToken,
@@ -175,6 +190,13 @@ export async function runMigrations(existingClient?: Client): Promise<void> {
 
 // Standalone execution: tsx server/db/migrate.ts
 if (process.argv[1] && process.argv[1].replace(/\\/g, '/').endsWith('server/db/migrate.ts')) {
+  // On Vercel without a Turso URL configured, migrations run at cold-start.
+  // Exit cleanly so the build does not fail.
+  if (process.env.VERCEL && !process.env.TURSO_DATABASE_URL) {
+    console.log('[Migrate] Vercel build without TURSO_DATABASE_URL — migrations deferred to cold-start.');
+    process.exit(0);
+  }
+
   runMigrations()
     .then(() => {
       console.log('[Migrate] All migrations up to date.');
