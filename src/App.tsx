@@ -602,9 +602,23 @@ export const App: React.FC = () => {
             }}
             onOpenAuth={() => setAuthModalOpen(true)}
             onLogout={async () => {
-              await api.logout();
-              showToast('Signed out of workspace', 'info');
-              setAuthModalOpen(true);
+              try {
+                await api.logout();
+              } catch { /* cookies are already cleared server-side */ }
+              // Clear all user state — this triggers the auth gate render branch
+              setCurrentUser(null);
+              setTasks([]);
+              setKnowledge([]);
+              setProjects([]);
+              setActivities([]);
+              setAiMessages([]);
+              setActiveConversationId(null);
+              setConversations([]);
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                abortControllerRef.current = null;
+              }
+              setIsAiStreaming(false);
             }}
           />
         );
