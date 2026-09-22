@@ -399,7 +399,7 @@ test('Security & Multi-Tenant Isolation Test Suite', async (t) => {
     });
     assert.strictEqual(createRes.status, 201);
 
-    const { contextText } = ragPipeline.retrieveContext(sessionA.workspaceId, 'Injection');
+    const { contextText } = await ragPipeline.retrieveContext(sessionA.workspaceId, 'Injection');
     assert.ok(contextText.length > 0, 'Should have retrieved context');
 
     // Check attribute escaping

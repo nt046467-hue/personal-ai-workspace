@@ -8,6 +8,8 @@ import { ragPipeline } from '../ai/rag';
 import { getAIProvider } from '../ai/provider';
 import { isOwnedByWorkspace } from '../db/ownership';
 
+export const maxDuration = 60;
+
 const router = Router();
 router.use(requireAuth);
 
@@ -16,6 +18,10 @@ const aiLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, message: 'AI
 const chatSchema = z.object({
   message: z.string().trim().min(1, 'Message content is required.').max(4000, 'Message too long.'),
   conversationId: z.string().optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    content: z.string(),
+  })).optional(),
 });
 
 // POST /api/ai/chat/stream
@@ -38,7 +44,8 @@ router.post('/chat/stream', aiLimiter, async (req: AuthenticatedRequest, res: Re
   // IDOR check: if conversationId supplied, assert it belongs to this workspace
   let activeConvId = conversationId;
   if (activeConvId) {
-    if (!isOwnedByWorkspace('conversations', activeConvId, workspaceId)) {
+    const owned = await isOwnedByWorkspace('conversations', activeConvId, workspaceId);
+    if (!owned) {
       res.status(404).json({
         success: false,
         error: { code: 'NOT_FOUND', message: 'Conversation not found.' },
@@ -48,64 +55,85 @@ router.post('/chat/stream', aiLimiter, async (req: AuthenticatedRequest, res: Re
   } else {
     // Create a new conversation for this message
     activeConvId = `conv-${crypto.randomBytes(6).toString('hex')}`;
-    db.prepare('INSERT INTO conversations (id, workspace_id, user_id, title) VALUES (?, ?, ?, ?)')
-      .run(activeConvId, workspaceId, userId, message.trim().slice(0, 50));
+    await db.execute({
+      sql: 'INSERT INTO conversations (id, workspace_id, user_id, title) VALUES (?, ?, ?, ?)',
+      args: [activeConvId, workspaceId, userId, message.trim().slice(0, 50)],
+    });
   }
 
   // Save user message
   const userMsgId = `m-${crypto.randomBytes(6).toString('hex')}`;
-  db.prepare(`
-    INSERT INTO messages (id, conversation_id, workspace_id, user_id, role, content)
-    VALUES (?, ?, ?, ?, 'user', ?)
-  `).run(userMsgId, activeConvId, workspaceId, userId, message.trim());
+  const assistantMsgId = `m-${crypto.randomBytes(6).toString('hex')}`;
+
+  await db.execute({
+    sql: `
+      INSERT INTO messages (id, conversation_id, workspace_id, user_id, role, content)
+      VALUES (?, ?, ?, ?, 'user', ?)
+    `,
+    args: [userMsgId, activeConvId, workspaceId, userId, message.trim()],
+  });
 
   // Set SSE Headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
+  (res as any).flushHeaders?.();
 
-  // Heartbeat every 15s to prevent proxy timeouts
+  // Heartbeat comment ping every 15s to prevent proxy/Vercel timeouts
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) {
-      res.write(': heartbeat\n\n');
+      res.write(': ping\n\n');
     }
   }, 15000);
 
-  // Handle client disconnect
-  let clientAborted = false;
+  // Client abort handling
+  const abortController = new AbortController();
   req.on('close', () => {
-    clientAborted = true;
+    abortController.abort();
     clearInterval(heartbeat);
   });
 
-  res.write(`data: ${JSON.stringify({ type: 'start', conversationId: activeConvId, userMessageId: userMsgId })}\n\n`);
+  res.write(`data: ${JSON.stringify({
+    type: 'start',
+    conversationId: activeConvId,
+    userMessageId: userMsgId,
+    assistantMessageId: assistantMsgId,
+  })}\n\n`);
 
   try {
-    const assistantMsgId = `m-${crypto.randomBytes(6).toString('hex')}`;
+    const result = await ragPipeline.executeStream(
+      workspaceId,
+      message.trim(),
+      (token) => {
+        if (!abortController.signal.aborted && !res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ type: 'token', messageId: assistantMsgId, token })}\n\n`);
+        }
+      },
+      abortController.signal
+    );
 
-    const result = await ragPipeline.executeStream(workspaceId, message.trim(), (token) => {
-      if (!clientAborted && !res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ type: 'token', token })}\n\n`);
-      }
-    });
+    if (!abortController.signal.aborted && !res.writableEnded) {
+      await db.execute({
+        sql: `
+          INSERT INTO messages (id, conversation_id, workspace_id, user_id, role, content, sources, actions)
+          VALUES (?, ?, ?, ?, 'assistant', ?, ?, ?)
+        `,
+        args: [
+          assistantMsgId,
+          activeConvId,
+          workspaceId,
+          userId,
+          result.answer,
+          JSON.stringify(result.sources),
+          JSON.stringify(result.actions),
+        ],
+      });
 
-    if (!clientAborted && !res.writableEnded) {
-      db.prepare(`
-        INSERT INTO messages (id, conversation_id, workspace_id, user_id, role, content, sources, actions)
-        VALUES (?, ?, ?, ?, 'assistant', ?, ?, ?)
-      `).run(
-        assistantMsgId,
-        activeConvId,
-        workspaceId,
-        userId,
-        result.answer,
-        JSON.stringify(result.sources),
-        JSON.stringify(result.actions)
-      );
-
-      db.prepare('UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(activeConvId);
+      await db.execute({
+        sql: 'UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        args: [activeConvId],
+      });
 
       res.write(`data: ${JSON.stringify({
         type: 'done',
@@ -116,9 +144,9 @@ router.post('/chat/stream', aiLimiter, async (req: AuthenticatedRequest, res: Re
       })}\n\n`);
     }
   } catch (err: any) {
-    console.error('[AI Chat] Stream error:', err);
+    console.error('[AI Chat Stream Error]', err);
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: 'AI generation failed. Please try again.' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', messageId: assistantMsgId, message: 'AI request failed. Please try again.' })}\n\n`);
     }
   } finally {
     clearInterval(heartbeat);
@@ -131,35 +159,47 @@ router.get('/brief', async (req: AuthenticatedRequest, res: Response): Promise<v
   const db = getDatabase();
   const workspaceId = req.user!.workspaceId;
 
-  const pendingTasks = db.prepare(`
-    SELECT title, priority, due_date
-    FROM tasks
-    WHERE workspace_id = ? AND completed = 0
-    ORDER BY priority = 'high' DESC, due_date ASC
-    LIMIT 5
-  `).all(workspaceId) as any[];
+  const tasksRes = await db.execute({
+    sql: `
+      SELECT title, priority, due_date
+      FROM tasks
+      WHERE workspace_id = ? AND completed = 0
+      ORDER BY priority = 'high' DESC, due_date ASC
+      LIMIT 5
+    `,
+    args: [workspaceId],
+  });
+  const pendingTasks = tasksRes.rows as any[];
 
-  const activeProjects = db.prepare(`
-    SELECT name, progress, deadline
-    FROM projects
-    WHERE workspace_id = ? AND status = 'active'
-    LIMIT 4
-  `).all(workspaceId) as any[];
+  const projectsRes = await db.execute({
+    sql: `
+      SELECT name, progress, deadline
+      FROM projects
+      WHERE workspace_id = ? AND status = 'active'
+      LIMIT 4
+    `,
+    args: [workspaceId],
+  });
+  const activeProjects = projectsRes.rows as any[];
 
-  const recentDocs = db.prepare(`
-    SELECT title, type, updated_at
-    FROM knowledge_items
-    WHERE workspace_id = ?
-    ORDER BY updated_at DESC
-    LIMIT 3
-  `).all(workspaceId) as any[];
+  const docsRes = await db.execute({
+    sql: `
+      SELECT title, type, updated_at
+      FROM knowledge_items
+      WHERE workspace_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 3
+    `,
+    args: [workspaceId],
+  });
+  const recentDocs = docsRes.rows as any[];
 
   let briefText = `### Workspace Brief\n\n`;
 
   if (pendingTasks.length > 0) {
     briefText += `**Pending Tasks:**\n`;
     pendingTasks.forEach(t => {
-      briefText += `• **[${t.priority.toUpperCase()}]** ${t.title}${t.due_date ? ` (${t.due_date})` : ''}\n`;
+      briefText += `• **[${String(t.priority).toUpperCase()}]** ${t.title}${t.due_date ? ` (${t.due_date})` : ''}\n`;
     });
     briefText += `\n`;
   } else {
@@ -210,10 +250,13 @@ router.post('/action', aiActionLimiter, async (req: AuthenticatedRequest, res: R
     const id = `t-${crypto.randomBytes(6).toString('hex')}`;
     const title = text ? String(text).slice(0, 200).trim() : 'New Action Item';
 
-    db.prepare(`
-      INSERT INTO tasks (id, workspace_id, user_id, title, notes, priority, due_date, due_category)
-      VALUES (?, ?, ?, ?, 'Generated from AI action', 'medium', 'Today', 'today')
-    `).run(id, workspaceId, userId, title);
+    await db.execute({
+      sql: `
+        INSERT INTO tasks (id, workspace_id, user_id, title, notes, priority, due_date, due_category)
+        VALUES (?, ?, ?, ?, 'Generated from AI action', 'medium', 'Today', 'today')
+      `,
+      args: [id, workspaceId, userId, title],
+    });
 
     res.json({ success: true, message: `Task created successfully.`, data: { id, title } });
     return;

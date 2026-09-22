@@ -8,51 +8,59 @@ import { createProjectSchema, updateProjectSchema } from '../validation/schemas'
 const router = Router();
 router.use(requireAuth);
 
-function formatProject(row: any, db: any): any {
-  // Compute open and total tasks dynamically
-  const taskCounts = db.prepare(`
-    SELECT 
-      COUNT(*) as total,
-      SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) as open
-    FROM tasks
-    WHERE project_id = ?
-  `).get(row.id) as any;
+async function formatProject(row: any, db: any): Promise<any> {
+  const taskCountsRes = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) as open
+      FROM tasks
+      WHERE project_id = ?
+    `,
+    args: [row.id],
+  });
+  const taskCounts = taskCountsRes.rows[0] as any;
 
-  const total = taskCounts?.total || 0;
-  const open = taskCounts?.open || 0;
-  const computedProgress = total > 0 ? Math.round(((total - open) / total) * 100) : (row.progress || 0);
+  const total = Number(taskCounts?.total || 0);
+  const open = Number(taskCounts?.open || 0);
+  const computedProgress = total > 0 ? Math.round(((total - open) / total) * 100) : Number(row.progress || 0);
 
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description || '',
+    id: String(row.id),
+    name: String(row.name),
+    description: String(row.description || ''),
     progress: computedProgress,
     openTasksCount: open,
     totalTasksCount: total,
     updatedAt: new Date(row.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     status: row.status,
-    deadline: row.deadline || 'No deadline',
-    color: row.color || '#38bdf8',
-    category: row.category || 'Engineering',
+    deadline: row.deadline ? String(row.deadline) : 'No deadline',
+    color: row.color ? String(row.color) : '#38bdf8',
+    category: row.category ? String(row.category) : 'Engineering',
   };
 }
 
 // GET /api/projects
-router.get('/', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const rows = db.prepare('SELECT * FROM projects WHERE workspace_id = ? ORDER BY updated_at DESC')
-    .all(req.user!.workspaceId);
+  const rowsRes = await db.execute({
+    sql: 'SELECT * FROM projects WHERE workspace_id = ? ORDER BY updated_at DESC',
+    args: [req.user!.workspaceId],
+  });
 
-  res.json({ success: true, data: rows.map(r => formatProject(r, db)) });
+  const formatted = await Promise.all(rowsRes.rows.map(r => formatProject(r, db)));
+  res.json({ success: true, data: formatted });
 });
 
 // GET /api/projects/:id
-router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const row = db.prepare('SELECT * FROM projects WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId);
+  const rowRes = await db.execute({
+    sql: 'SELECT * FROM projects WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (!row) {
+  if (rowRes.rows.length === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Project not found.' },
@@ -60,38 +68,50 @@ router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
     return;
   }
 
-  res.json({ success: true, data: formatProject(row, db) });
+  const formatted = await formatProject(rowRes.rows[0], db);
+  res.json({ success: true, data: formatted });
 });
 
 // POST /api/projects
-router.post('/', validateBody(createProjectSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(createProjectSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { name, description, color = '#38bdf8', category = 'Engineering', deadline } = req.body;
 
   const db = getDatabase();
   const id = `p-${crypto.randomBytes(6).toString('hex')}`;
 
-  db.prepare(`
-    INSERT INTO projects (id, workspace_id, user_id, name, description, color, category, deadline, status, progress)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
-  `).run(id, req.user!.workspaceId, req.user!.userId, name.trim(), description || '', color, category, deadline || 'Upcoming');
+  await db.execute({
+    sql: `
+      INSERT INTO projects (id, workspace_id, user_id, name, description, color, category, deadline, status, progress)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
+    `,
+    args: [id, req.user!.workspaceId, req.user!.userId, name.trim(), description || '', color, category, deadline || 'Upcoming'],
+  });
 
   // Record activity
-  db.prepare('INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(`act-${Date.now()}`, req.user!.workspaceId, req.user!.userId, 'Created project', name.trim(), 'project', id);
+  await db.execute({
+    sql: 'INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    args: [`act-${Date.now()}`, req.user!.workspaceId, req.user!.userId, 'Created project', name.trim(), 'project', id],
+  });
 
-  const created = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
-  res.status(201).json({ success: true, data: formatProject(created, db) });
+  const createdRes = await db.execute({
+    sql: 'SELECT * FROM projects WHERE id = ?',
+    args: [id],
+  });
+  const formatted = await formatProject(createdRes.rows[0], db);
+  res.status(201).json({ success: true, data: formatted });
 });
 
 // PUT /api/projects/:id
-router.put('/:id', validateBody(updateProjectSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.put('/:id', validateBody(updateProjectSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { name, description, color, category, deadline, status, progress } = req.body;
   const db = getDatabase();
 
-  const existing = db.prepare('SELECT id FROM projects WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId);
+  const existingRes = await db.execute({
+    sql: 'SELECT id FROM projects WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (!existing) {
+  if (existingRes.rows.length === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Project not found.' },
@@ -99,40 +119,49 @@ router.put('/:id', validateBody(updateProjectSchema), (req: AuthenticatedRequest
     return;
   }
 
-  db.prepare(`
-    UPDATE projects
-    SET name = COALESCE(?, name),
-        description = COALESCE(?, description),
-        color = COALESCE(?, color),
-        category = COALESCE(?, category),
-        deadline = COALESCE(?, deadline),
-        status = COALESCE(?, status),
-        progress = COALESCE(?, progress),
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND workspace_id = ?
-  `).run(
-    name || null,
-    description !== undefined ? description : null,
-    color || null,
-    category || null,
-    deadline || null,
-    status || null,
-    progress !== undefined ? progress : null,
-    req.params.id,
-    req.user!.workspaceId
-  );
+  await db.execute({
+    sql: `
+      UPDATE projects
+      SET name = COALESCE(?, name),
+          description = COALESCE(?, description),
+          color = COALESCE(?, color),
+          category = COALESCE(?, category),
+          deadline = COALESCE(?, deadline),
+          status = COALESCE(?, status),
+          progress = COALESCE(?, progress),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND workspace_id = ?
+    `,
+    args: [
+      name || null,
+      description !== undefined ? description : null,
+      color || null,
+      category || null,
+      deadline || null,
+      status || null,
+      progress !== undefined ? progress : null,
+      req.params.id,
+      req.user!.workspaceId,
+    ],
+  });
 
-  const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
-  res.json({ success: true, data: formatProject(updated, db) });
+  const updatedRes = await db.execute({
+    sql: 'SELECT * FROM projects WHERE id = ?',
+    args: [req.params.id],
+  });
+  const formatted = await formatProject(updatedRes.rows[0], db);
+  res.json({ success: true, data: formatted });
 });
 
 // DELETE /api/projects/:id
-router.delete('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const result = db.prepare('DELETE FROM projects WHERE id = ? AND workspace_id = ?')
-    .run(req.params.id, req.user!.workspaceId);
+  const result = await db.execute({
+    sql: 'DELETE FROM projects WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (result.changes === 0) {
+  if (result.rowsAffected === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Project not found.' },

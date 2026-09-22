@@ -103,57 +103,69 @@ export class DocumentProcessor {
    */
   public async processDocument(documentId: string): Promise<void> {
     const db = getDatabase();
-    const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(documentId) as any;
+    const docRes = await db.execute({
+      sql: 'SELECT * FROM documents WHERE id = ?',
+      args: [documentId],
+    });
+    const doc = docRes.rows[0] as any;
     if (!doc) return;
 
     try {
       // Mark as processing
-      db.prepare('UPDATE documents SET processing_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-        .run('processing', documentId);
+      await db.execute({
+        sql: 'UPDATE documents SET processing_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        args: ['processing', documentId],
+      });
 
-      const buffer = await storageService.getFileBuffer(doc.storage_path);
-      const { text, pageCount } = await this.extractText(buffer, doc.mime_type, doc.original_name);
-      const summary = this.generateSummary(text, doc.original_name);
+      const buffer = await storageService.getFileBuffer(String(doc.storage_path));
+      const { text, pageCount } = await this.extractText(buffer, String(doc.mime_type), String(doc.original_name));
+      const summary = this.generateSummary(text, String(doc.original_name));
       const chunks = this.chunkText(text);
 
       // Save document chunks
-      db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(documentId);
-
-      const insertChunk = db.prepare(`
-        INSERT INTO document_chunks (id, document_id, workspace_id, user_id, chunk_index, content, token_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      chunks.forEach((chunkContent, index) => {
-        const chunkId = `chk-${documentId}-${index}`;
-        const wordCount = chunkContent.split(/\s+/).length;
-        insertChunk.run(chunkId, documentId, doc.workspace_id, doc.user_id, index, chunkContent, wordCount);
+      await db.execute({
+        sql: 'DELETE FROM document_chunks WHERE document_id = ?',
+        args: [documentId],
       });
 
+      for (let index = 0; index < chunks.length; index++) {
+        const chunkContent = chunks[index];
+        const chunkId = `chk-${documentId}-${index}`;
+        const wordCount = chunkContent.split(/\s+/).length;
+        await db.execute({
+          sql: `INSERT INTO document_chunks (id, document_id, workspace_id, user_id, chunk_index, content, token_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [chunkId, documentId, doc.workspace_id, doc.user_id, index, chunkContent, wordCount],
+        });
+      }
+
       // Update document record to ready
-      db.prepare(`
-        UPDATE documents
-        SET extracted_text = ?, page_count = ?, summary = ?, processing_status = 'ready', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(text, pageCount, summary, documentId);
+      await db.execute({
+        sql: `UPDATE documents
+              SET extracted_text = ?, page_count = ?, summary = ?, processing_status = 'ready', updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?`,
+        args: [text, pageCount, summary, documentId],
+      });
 
       // If document has associated knowledge_item, update it
       if (doc.knowledge_item_id) {
-        db.prepare(`
-          UPDATE knowledge_items
-          SET content = ?, excerpt = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(text, summary, doc.knowledge_item_id);
+        await db.execute({
+          sql: `UPDATE knowledge_items
+                SET content = ?, excerpt = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?`,
+          args: [text, summary, doc.knowledge_item_id],
+        });
       }
 
       console.log(`[Processor] Document ${doc.original_name} processed successfully (${chunks.length} chunks).`);
     } catch (err: any) {
       console.error(`[Processor] Failed to process document ${documentId}:`, err);
-      db.prepare(`
-        UPDATE documents
-        SET processing_status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(err.message || 'Processing failed', documentId);
+      await db.execute({
+        sql: `UPDATE documents
+              SET processing_status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?`,
+        args: [err.message || 'Processing failed', documentId],
+      });
     }
   }
 }

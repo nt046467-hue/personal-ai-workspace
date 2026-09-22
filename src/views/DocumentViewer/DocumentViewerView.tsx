@@ -47,8 +47,9 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
       await api.streamAIChat(
         `Regarding document "${document.title}": ${text}`,
         undefined,
+        undefined,
         {
-          onToken: (token) => {
+          onToken: (token: string) => {
             setMessages(prev => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -61,7 +62,7 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
               return updated;
             });
           },
-          onDone: (result) => {
+          onDone: (result: { content: string; sources: any[]; actions: any[]; messageId?: string }) => {
             setMessages(prev => {
               const updated = [...prev];
               const lastIdx = updated.length - 1;
@@ -74,7 +75,7 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
               return updated;
             });
           },
-          onError: (err) => {
+          onError: (err: string) => {
             showToast(err || 'AI response failed', 'error');
           },
         }

@@ -9,40 +9,51 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/conversations
-router.get('/', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const convs = db.prepare(`
-    SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) as message_count
-    FROM conversations c
-    WHERE c.workspace_id = ?
-    ORDER BY c.updated_at DESC
-  `).all(req.user!.workspaceId);
+  const convsRes = await db.execute({
+    sql: `
+      SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) as message_count
+      FROM conversations c
+      WHERE c.workspace_id = ?
+      ORDER BY c.updated_at DESC
+    `,
+    args: [req.user!.workspaceId],
+  });
 
-  res.json({ success: true, data: convs });
+  res.json({ success: true, data: convsRes.rows });
 });
 
 // POST /api/conversations
-router.post('/', validateBody(createConversationSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(createConversationSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title } = req.body;
   const db = getDatabase();
   const id = `conv-${crypto.randomBytes(6).toString('hex')}`;
 
-  db.prepare(`
-    INSERT INTO conversations (id, workspace_id, user_id, title)
-    VALUES (?, ?, ?, ?)
-  `).run(id, req.user!.workspaceId, req.user!.userId, title ? title.trim() : 'New AI Consultation');
+  await db.execute({
+    sql: `
+      INSERT INTO conversations (id, workspace_id, user_id, title)
+      VALUES (?, ?, ?, ?)
+    `,
+    args: [id, req.user!.workspaceId, req.user!.userId, title ? title.trim() : 'New AI Consultation'],
+  });
 
-  const created = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
-  res.status(201).json({ success: true, data: created });
+  const createdRes = await db.execute({
+    sql: 'SELECT * FROM conversations WHERE id = ?',
+    args: [id],
+  });
+  res.status(201).json({ success: true, data: createdRes.rows[0] });
 });
 
 // GET /api/conversations/:id/messages
-router.get('/:id/messages', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const conv = db.prepare('SELECT id FROM conversations WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId);
+  const convRes = await db.execute({
+    sql: 'SELECT id FROM conversations WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (!conv) {
+  if (convRes.rows.length === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Conversation not found.' },
@@ -50,31 +61,36 @@ router.get('/:id/messages', (req: AuthenticatedRequest, res: Response): void => 
     return;
   }
 
-  const messages = db.prepare(`
-    SELECT * FROM messages
-    WHERE conversation_id = ? AND workspace_id = ?
-    ORDER BY created_at ASC
-  `).all(req.params.id, req.user!.workspaceId) as any[];
+  const messagesRes = await db.execute({
+    sql: `
+      SELECT * FROM messages
+      WHERE conversation_id = ? AND workspace_id = ?
+      ORDER BY created_at ASC
+    `,
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  const formatted = messages.map(m => ({
-    id: m.id,
+  const formatted = messagesRes.rows.map((m: any) => ({
+    id: String(m.id),
     sender: m.role,
-    content: m.content,
-    timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    sources: m.sources ? JSON.parse(m.sources) : undefined,
-    actions: m.actions ? JSON.parse(m.actions) : undefined,
+    content: String(m.content),
+    timestamp: new Date(String(m.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    sources: m.sources ? JSON.parse(String(m.sources)) : undefined,
+    actions: m.actions ? JSON.parse(String(m.actions)) : undefined,
   }));
 
   res.json({ success: true, data: formatted });
 });
 
 // DELETE /api/conversations/:id
-router.delete('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const result = db.prepare('DELETE FROM conversations WHERE id = ? AND workspace_id = ?')
-    .run(req.params.id, req.user!.workspaceId);
+  const result = await db.execute({
+    sql: 'DELETE FROM conversations WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (result.changes === 0) {
+  if (result.rowsAffected === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Conversation not found.' },

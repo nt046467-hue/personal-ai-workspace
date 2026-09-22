@@ -12,11 +12,11 @@ import { config } from '../config';
 const router = Router();
 const authLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 
-function setAuthCookies(
+async function setAuthCookies(
   res: Response, 
   user: { id: string; email: string; name: string; role: string; tokenVersion: number }, 
   workspaceId: string
-): string {
+): Promise<string> {
   const db = getDatabase();
 
   // 1. Short-lived 15-minute access token
@@ -36,10 +36,11 @@ function setAuthCookies(
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
-    db.prepare(`
-      INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at)
-      VALUES (?, ?, ?, ?)
-    `).run(sessionId, user.id, refreshHash, expiresAt);
+    await db.execute({
+      sql: `INSERT INTO sessions (id, user_id, refresh_token_hash, expires_at)
+            VALUES (?, ?, ?, ?)`,
+      args: [sessionId, user.id, refreshHash, expiresAt],
+    });
   } catch (err) {
     console.error('[Auth] Error saving session to database:', err);
   }
@@ -103,8 +104,11 @@ router.post('/signup', authLimiter, validateBody(signupSchema), async (req: Requ
     const { email, password, name } = req.body;
     const db = getDatabase();
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (existing) {
+    const existingRes = await db.execute({
+      sql: 'SELECT id FROM users WHERE email = ?',
+      args: [email],
+    });
+    if (existingRes.rows.length > 0) {
       res.status(409).json({
         success: false,
         error: { code: 'EMAIL_EXISTS', message: 'An account with this email already exists.' },
@@ -117,29 +121,23 @@ router.post('/signup', authLimiter, validateBody(signupSchema), async (req: Requ
     const passwordHash = await bcrypt.hash(password, 10);
     const initials = name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
-    // Create User, Profile, and Personal Workspace in a transaction
-    db.exec('BEGIN TRANSACTION;');
-    try {
-      db.prepare(`
-        INSERT INTO users (id, email, password_hash, name, avatar_url, role, token_version)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
-      `).run(userId, email, passwordHash, name, initials, 'Personal User');
+    await db.execute({
+      sql: `INSERT INTO users (id, email, password_hash, name, avatar_url, role, token_version)
+            VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      args: [userId, email, passwordHash, name, initials, 'Personal User'],
+    });
 
-      db.prepare(`
-        INSERT INTO profiles (user_id, display_name, avatar_url, timezone, theme)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(userId, name, initials, 'UTC', 'dark');
+    await db.execute({
+      sql: `INSERT INTO profiles (user_id, display_name, avatar_url, timezone, theme)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [userId, name, initials, 'UTC', 'dark'],
+    });
 
-      db.prepare(`
-        INSERT INTO workspaces (id, user_id, name, description)
-        VALUES (?, ?, ?, ?)
-      `).run(workspaceId, userId, `${name}'s Workspace`, 'Personal AI Workspace');
-
-      db.exec('COMMIT;');
-    } catch (txErr) {
-      db.exec('ROLLBACK;');
-      throw txErr;
-    }
+    await db.execute({
+      sql: `INSERT INTO workspaces (id, user_id, name, description)
+            VALUES (?, ?, ?, ?)`,
+      args: [workspaceId, userId, `${name}'s Workspace`, 'Personal AI Workspace'],
+    });
 
     const userObj = {
       id: userId,
@@ -149,7 +147,7 @@ router.post('/signup', authLimiter, validateBody(signupSchema), async (req: Requ
       tokenVersion: 1,
     };
 
-    const csrfToken = setAuthCookies(res, userObj, workspaceId);
+    const csrfToken = await setAuthCookies(res, userObj, workspaceId);
 
     // Response body contains NO token — cookie-only sessions (F-05)
     res.json({
@@ -182,7 +180,11 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
     const { email, password } = req.body;
     const db = getDatabase();
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+    const userRes = await db.execute({
+      sql: 'SELECT * FROM users WHERE email = ?',
+      args: [email],
+    });
+    const user = userRes.rows[0] as any;
     if (!user) {
       res.status(401).json({
         success: false,
@@ -191,7 +193,7 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
       return;
     }
 
-    const match = await bcrypt.compare(password, user.password_hash);
+    const match = await bcrypt.compare(password, String(user.password_hash));
     if (!match) {
       res.status(401).json({
         success: false,
@@ -200,20 +202,24 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
       return;
     }
 
-    const workspace = db.prepare('SELECT id, name FROM workspaces WHERE user_id = ? LIMIT 1').get(user.id) as any;
-    const workspaceId = workspace?.id || `w-${user.id}`;
-    const workspaceName = workspace?.name || `${user.name}'s Workspace`;
-    const tokenVersion = user.token_version || 1;
+    const wsRes = await db.execute({
+      sql: 'SELECT id, name FROM workspaces WHERE user_id = ? LIMIT 1',
+      args: [user.id],
+    });
+    const workspace = wsRes.rows[0] as any;
+    const workspaceId = workspace ? String(workspace.id) : `w-${user.id}`;
+    const workspaceName = workspace ? String(workspace.name) : `${user.name}'s Workspace`;
+    const tokenVersion = Number(user.token_version || 1);
 
     const userObj = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
+      id: String(user.id),
+      email: String(user.email),
+      name: String(user.name),
+      role: String(user.role),
       tokenVersion,
     };
 
-    const csrfToken = setAuthCookies(res, userObj, workspaceId);
+    const csrfToken = await setAuthCookies(res, userObj, workspaceId);
 
     // Response body contains NO token — cookie-only sessions (F-05)
     res.json({
@@ -221,11 +227,11 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
       data: {
         csrfToken,
         user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          avatar: user.avatar_url,
-          role: user.role,
+          id: String(user.id),
+          email: String(user.email),
+          name: String(user.name),
+          avatar: user.avatar_url ? String(user.avatar_url) : undefined,
+          role: String(user.role),
           workspaceId,
           workspaceName,
         },
@@ -241,13 +247,16 @@ router.post('/login', authLimiter, validateBody(loginSchema), async (req: Reques
 });
 
 // Logout
-router.post('/logout', (req: Request, res: Response): void => {
+router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   const refreshToken = req.cookies?.myspace_refresh;
   if (refreshToken) {
     try {
       const db = getDatabase();
       const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-      db.prepare('DELETE FROM sessions WHERE refresh_token_hash = ?').run(refreshHash);
+      await db.execute({
+        sql: 'DELETE FROM sessions WHERE refresh_token_hash = ?',
+        args: [refreshHash],
+      });
     } catch {}
   }
   clearAuthCookies(res);
@@ -255,25 +264,39 @@ router.post('/logout', (req: Request, res: Response): void => {
 });
 
 // Logout all devices
-router.post('/logout-all', requireAuth, (req: AuthenticatedRequest, res: Response): void => {
-  const db = getDatabase();
-  db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(req.user!.userId);
-  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.user!.userId);
+router.post('/logout-all', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const db = getDatabase();
+    await db.execute({
+      sql: 'UPDATE users SET token_version = token_version + 1 WHERE id = ?',
+      args: [req.user!.userId],
+    });
+    await db.execute({
+      sql: 'DELETE FROM sessions WHERE user_id = ?',
+      args: [req.user!.userId],
+    });
+  } catch (err) {
+    console.error('[Auth] Logout-all error:', err);
+  }
   clearAuthCookies(res);
   res.json({ success: true, message: 'All sessions invalidated.' });
 });
 
 // Me (Current Session User)
-router.get('/me', requireAuth, (req: AuthenticatedRequest, res: Response): void => {
+router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const user = db.prepare(`
-    SELECT u.id, u.email, u.name, u.avatar_url, u.role, p.theme, p.timezone, w.id as workspace_id, w.name as workspace_name
-    FROM users u
-    LEFT JOIN profiles p ON u.id = p.user_id
-    LEFT JOIN workspaces w ON u.id = w.user_id
-    WHERE u.id = ?
-    LIMIT 1
-  `).get(req.user!.userId) as any;
+  const userRes = await db.execute({
+    sql: `
+      SELECT u.id, u.email, u.name, u.avatar_url, u.role, p.theme, p.timezone, w.id as workspace_id, w.name as workspace_name
+      FROM users u
+      LEFT JOIN profiles p ON u.id = p.user_id
+      LEFT JOIN workspaces w ON u.id = w.user_id
+      WHERE u.id = ?
+      LIMIT 1
+    `,
+    args: [req.user!.userId],
+  });
+  const user = userRes.rows[0] as any;
 
   if (!user) {
     res.status(404).json({
@@ -301,36 +324,48 @@ router.get('/me', requireAuth, (req: AuthenticatedRequest, res: Response): void 
   res.json({
     success: true,
     data: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatar: user.avatar_url,
-      role: user.role,
-      theme: user.theme || 'dark',
-      timezone: user.timezone || 'UTC',
-      workspaceId: user.workspace_id,
-      workspaceName: user.workspace_name,
+      id: String(user.id),
+      email: String(user.email),
+      name: String(user.name),
+      avatar: user.avatar_url ? String(user.avatar_url) : undefined,
+      role: String(user.role),
+      theme: user.theme ? String(user.theme) : 'dark',
+      timezone: user.timezone ? String(user.timezone) : 'UTC',
+      workspaceId: user.workspace_id ? String(user.workspace_id) : undefined,
+      workspaceName: user.workspace_name ? String(user.workspace_name) : undefined,
       csrfToken,
     },
   });
 });
 
 // Update Profile
-router.put('/profile', requireAuth, validateBody(profileSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.put('/profile', requireAuth, validateBody(profileSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { name, theme, timezone } = req.body;
   const db = getDatabase();
 
   if (name) {
-    db.prepare('UPDATE users SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(name, req.user!.userId);
-    db.prepare('UPDATE profiles SET display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(name, req.user!.userId);
+    await db.execute({
+      sql: 'UPDATE users SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      args: [name, req.user!.userId],
+    });
+    await db.execute({
+      sql: 'UPDATE profiles SET display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+      args: [name, req.user!.userId],
+    });
   }
 
   if (theme) {
-    db.prepare('UPDATE profiles SET theme = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(theme, req.user!.userId);
+    await db.execute({
+      sql: 'UPDATE profiles SET theme = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+      args: [theme, req.user!.userId],
+    });
   }
 
   if (timezone) {
-    db.prepare('UPDATE profiles SET timezone = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(timezone, req.user!.userId);
+    await db.execute({
+      sql: 'UPDATE profiles SET timezone = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+      args: [timezone, req.user!.userId],
+    });
   }
 
   res.json({ success: true, message: 'Profile updated successfully.' });

@@ -9,7 +9,8 @@ import {
   FileText, 
   ExternalLink,
   Bot,
-  MessageSquare
+  MessageSquare,
+  Plus
 } from 'lucide-react';
 import { MySpaceLogo } from '../../components/Brand/MySpaceLogo';
 import type { AIMessage } from '../../data/mockData';
@@ -28,6 +29,7 @@ interface AIAssistantViewProps {
   isStreaming?: boolean;
   onStopStreaming?: () => void;
   onComposerFocusChange?: (focused: boolean) => void;
+  onNewChat?: () => void;
 }
 
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
@@ -41,6 +43,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   isStreaming = false,
   onStopStreaming,
   onComposerFocusChange,
+  onNewChat,
 }) => {
   const [inputText, setInputText] = useState('');
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -50,6 +53,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track user scroll position: if scrolled up > 200px show "Jump to latest" pill
   const handleScroll = () => {
@@ -93,10 +97,11 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
     el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }, [inputText]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || isStreaming) return;
-    onSendMessage(inputText);
+  // Central send: called from both keyboard paths and form submit button
+  const sendMessage = () => {
+    const text = inputText.trim();
+    if (!text || isStreaming) return;
+    onSendMessage(text);
     setInputText('');
     isNearBottomRef.current = true;
     setShowJumpToLatest(false);
@@ -104,24 +109,57 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
       textareaRef.current.style.height = '';
       textareaRef.current.style.overflowY = 'hidden';
     }
-    // Instant scroll — avoids F-02 where content grows faster than smooth animation
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage();
+  };
+
+  // Desktop: intercept Enter on keydown before character is inserted
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      const isMobile = typeof window !== 'undefined' && 
-        (window.innerWidth <= 820 || ('ontouchstart' in window && navigator.maxTouchPoints > 0));
-      if (!isMobile) {
-        e.preventDefault();
-        handleSubmit(e);
-      }
+    if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any).isComposing) {
+      e.preventDefault();
+      sendMessage();
     }
   };
 
+  // Mobile: virtual keyboards insert '\n' into the textarea value BEFORE
+  // keydown fires (or instead of it). Catch the trailing newline in onChange.
+  // NOTE: do NOT check isComposing here — iOS marks autocorrect text as
+  // "composing" even for plain ASCII, which would silently block the send.
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    if (value.endsWith('\n')) {
+      const stripped = value.slice(0, -1);
+      const text = stripped.trim();
+      if (text && !isStreaming) {
+        onSendMessage(text);
+        setInputText('');
+        isNearBottomRef.current = true;
+        setShowJumpToLatest(false);
+        if (textareaRef.current) {
+          textareaRef.current.style.height = '';
+          textareaRef.current.style.overflowY = 'hidden';
+        }
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+        }
+      } else {
+        // Enter on empty box — just strip the \n, don't submit
+        setInputText(stripped);
+      }
+      return;
+    }
+    setInputText(value);
+  };
+
   const handleFocus = () => {
+    // Cancel any pending blur — user is still in the composer
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
     isNearBottomRef.current = true;
     onComposerFocusChange?.(true);
     setTimeout(() => {
@@ -130,8 +168,15 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
     }, 200);
   };
 
+  // Debounced blur: wait 300ms before telling the parent the composer lost focus.
+  // On iOS, tapping the virtual keyboard's Send/Enter fires blur BEFORE the
+  // keydown/onChange that sends the message — without the debounce, the bottom
+  // nav collapses first and the second tap is needed to re-focus and send.
   const handleBlur = () => {
-    onComposerFocusChange?.(false);
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = setTimeout(() => {
+      onComposerFocusChange?.(false);
+    }, 300);
   };
 
   const handleActionClick = (action: string, targetId?: string) => {
@@ -159,6 +204,18 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             <span className="ai-header-subtitle">Direct context over your tasks, documents, and code notes</span>
           </div>
         </div>
+        {onNewChat && (
+          <button 
+            type="button" 
+            className="btn-secondary" 
+            onClick={onNewChat}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', borderRadius: 'var(--radius-full)' }}
+            title="Start new conversation"
+          >
+            <Plus size={14} />
+            <span>New Chat</span>
+          </button>
+        )}
       </div>
 
       {/* Main Conversation Container */}
@@ -296,12 +353,14 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             className="ai-composer-input"
             placeholder="Ask your workspace…"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleChange}
             onKeyDown={handleKeyDown}
             onFocus={handleFocus}
             onBlur={handleBlur}
             aria-label="Ask your workspace"
             disabled={isStreaming}
+            enterKeyHint="send"
+            inputMode="text"
           />
 
           {isStreaming ? (
@@ -320,6 +379,12 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
               className="ai-send-btn btn-primary"
               disabled={!inputText.trim()}
               aria-label="Send message"
+              onPointerDown={(e) => {
+                // Prevent textarea from losing focus on mobile tap.
+                // Without this, the soft keyboard dismisses, the bottom nav pops up,
+                // and the resulting layout shift drops the tap event before submit fires.
+                e.preventDefault();
+              }}
             >
               <Send size={15} />
             </button>

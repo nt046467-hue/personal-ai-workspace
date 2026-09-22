@@ -10,16 +10,19 @@ const router = Router();
 router.use(requireAuth);
 
 // Helper to format KnowledgeItem for frontend
-function formatKnowledgeItem(row: any, db: any): any {
-  const metadata = row.metadata ? JSON.parse(row.metadata) : {};
+async function formatKnowledgeItem(row: any, db: any): Promise<any> {
+  const metadata = row.metadata ? JSON.parse(String(row.metadata)) : {};
   
   // Get tags for item
-  const tagRows = db.prepare(`
-    SELECT t.name FROM tags t
-    JOIN item_tags it ON t.id = it.tag_id
-    WHERE it.item_id = ?
-  `).all(row.id) as any[];
-  const tags = tagRows.map(r => r.name);
+  const tagRows = await db.execute({
+    sql: `
+      SELECT t.name FROM tags t
+      JOIN item_tags it ON t.id = it.tag_id
+      WHERE it.item_id = ?
+    `,
+    args: [row.id],
+  });
+  const tags = tagRows.rows.map((r: any) => String(r.name));
 
   // Timeago helper
   const updatedDate = new Date(row.updated_at);
@@ -32,22 +35,22 @@ function formatKnowledgeItem(row: any, db: any): any {
   }
 
   return {
-    id: row.id,
-    title: row.title,
+    id: String(row.id),
+    title: String(row.title),
     type: row.type,
-    excerpt: row.excerpt || '',
+    excerpt: row.excerpt ? String(row.excerpt) : '',
     tags: tags.length > 0 ? tags : (metadata.tags || []),
     updatedAt: timeStr,
     readTime: metadata.readTime || `${Math.max(1, Math.ceil((row.content?.length || 500) / 750))} min read`,
     pinned: Boolean(row.pinned),
-    content: row.content || '',
+    content: row.content ? String(row.content) : '',
     fileSize: metadata.fileSize,
     pageCount: metadata.pageCount,
   };
 }
 
 // GET /api/knowledge
-router.get('/', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
   const workspaceId = req.user!.workspaceId;
   const { type, search } = req.query;
@@ -67,19 +70,21 @@ router.get('/', (req: AuthenticatedRequest, res: Response): void => {
 
   query += ' ORDER BY pinned DESC, updated_at DESC';
 
-  const items = db.prepare(query).all(...params);
-  const formatted = items.map(item => formatKnowledgeItem(item, db));
+  const itemsRes = await db.execute({ sql: query, args: params });
+  const formatted = await Promise.all(itemsRes.rows.map(item => formatKnowledgeItem(item, db)));
 
   res.json({ success: true, data: formatted });
 });
 
 // GET /api/knowledge/:id
-router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const item = db.prepare('SELECT * FROM knowledge_items WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId) as any;
+  const itemRes = await db.execute({
+    sql: 'SELECT * FROM knowledge_items WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (!item) {
+  if (itemRes.rows.length === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Knowledge item not found.' },
@@ -87,69 +92,91 @@ router.get('/:id', (req: AuthenticatedRequest, res: Response): void => {
     return;
   }
 
-  res.json({ success: true, data: formatKnowledgeItem(item, db) });
+  const formatted = await formatKnowledgeItem(itemRes.rows[0], db);
+  res.json({ success: true, data: formatted });
 });
 
 // POST /api/knowledge
-router.post('/', validateBody(createKnowledgeSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(createKnowledgeSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title, content, type = 'note', tags = [], projectId, folderId } = req.body;
   const wid = req.user!.workspaceId;
 
   // Tenant isolation: verify FK references belong to this workspace
-  if (projectId) assertOwned('projects', projectId, wid, 'Project not found in your workspace.');
-  if (folderId) assertOwned('folders', folderId, wid, 'Folder not found in your workspace.');
+  if (projectId) await assertOwned('projects', projectId, wid, 'Project not found in your workspace.');
+  if (folderId) await assertOwned('folders', folderId, wid, 'Folder not found in your workspace.');
 
   const db = getDatabase();
   const id = `k-${crypto.randomBytes(6).toString('hex')}`;
   const excerpt = content ? content.slice(0, 160).replace(/[#*`]/g, '') + '...' : 'New scratchpad note';
 
-  db.prepare(`
-    INSERT INTO knowledge_items (id, workspace_id, user_id, project_id, folder_id, title, content, excerpt, type, metadata)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    wid,
-    req.user!.userId,
-    projectId || null,
-    folderId || null,
-    title.trim(),
-    content || '',
-    excerpt,
-    type,
-    JSON.stringify({ tags })
-  );
+  await db.execute({
+    sql: `
+      INSERT INTO knowledge_items (id, workspace_id, user_id, project_id, folder_id, title, content, excerpt, type, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    args: [
+      id,
+      wid,
+      req.user!.userId,
+      projectId || null,
+      folderId || null,
+      title.trim(),
+      content || '',
+      excerpt,
+      type,
+      JSON.stringify({ tags }),
+    ],
+  });
 
   // Add tags
   for (const tagName of tags) {
-    let tag = db.prepare('SELECT id FROM tags WHERE workspace_id = ? AND name = ?').get(wid, tagName) as any;
-    if (!tag) {
-      const tagId = `tag-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      db.prepare('INSERT INTO tags (id, workspace_id, user_id, name) VALUES (?, ?, ?, ?)').run(tagId, wid, req.user!.userId, tagName);
-      tag = { id: tagId };
+    const tagRes = await db.execute({
+      sql: 'SELECT id FROM tags WHERE workspace_id = ? AND name = ?',
+      args: [wid, tagName],
+    });
+    let tagId = tagRes.rows[0] ? String(tagRes.rows[0].id) : null;
+    if (!tagId) {
+      tagId = `tag-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      await db.execute({
+        sql: 'INSERT INTO tags (id, workspace_id, user_id, name) VALUES (?, ?, ?, ?)',
+        args: [tagId, wid, req.user!.userId, tagName],
+      });
     }
-    db.prepare('INSERT OR IGNORE INTO item_tags (item_id, tag_id, item_type) VALUES (?, ?, ?)').run(id, tag.id, 'knowledge');
+    await db.execute({
+      sql: 'INSERT OR IGNORE INTO item_tags (item_id, tag_id, item_type) VALUES (?, ?, ?)',
+      args: [id, tagId, 'knowledge'],
+    });
   }
 
   // Record activity
-  db.prepare('INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(`act-${Date.now()}`, req.user!.workspaceId, req.user!.userId, 'Created note', title.trim(), 'note', id);
+  await db.execute({
+    sql: 'INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    args: [`act-${Date.now()}`, req.user!.workspaceId, req.user!.userId, 'Created note', title.trim(), 'note', id],
+  });
 
-  const created = db.prepare('SELECT * FROM knowledge_items WHERE id = ?').get(id);
-  res.status(201).json({ success: true, data: formatKnowledgeItem(created, db) });
+  const createdRes = await db.execute({
+    sql: 'SELECT * FROM knowledge_items WHERE id = ?',
+    args: [id],
+  });
+  const formatted = await formatKnowledgeItem(createdRes.rows[0], db);
+  res.status(201).json({ success: true, data: formatted });
 });
 
 // PUT /api/knowledge/:id (Autosave & update)
-router.put('/:id', validateBody(updateKnowledgeSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.put('/:id', validateBody(updateKnowledgeSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title, content, tags, pinned, projectId, folderId } = req.body;
   const wid = req.user!.workspaceId;
   const db = getDatabase();
 
   // Tenant isolation: verify FK references belong to this workspace
-  if (projectId) assertOwned('projects', projectId, wid, 'Project not found in your workspace.');
-  if (folderId) assertOwned('folders', folderId, wid, 'Folder not found in your workspace.');
+  if (projectId) await assertOwned('projects', projectId, wid, 'Project not found in your workspace.');
+  if (folderId) await assertOwned('folders', folderId, wid, 'Folder not found in your workspace.');
 
-  const existing = db.prepare('SELECT id, metadata FROM knowledge_items WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, wid) as any;
+  const existingRes = await db.execute({
+    sql: 'SELECT id, metadata FROM knowledge_items WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, wid],
+  });
+  const existing = existingRes.rows[0] as any;
 
   if (!existing) {
     res.status(404).json({
@@ -160,43 +187,52 @@ router.put('/:id', validateBody(updateKnowledgeSchema), (req: AuthenticatedReque
   }
 
   const excerpt = content ? content.slice(0, 160).replace(/[#*`]/g, '').trim() + '...' : undefined;
-  const meta = existing.metadata ? JSON.parse(existing.metadata) : {};
+  const meta = existing.metadata ? JSON.parse(String(existing.metadata)) : {};
   if (tags) meta.tags = tags;
 
-  db.prepare(`
-    UPDATE knowledge_items
-    SET title = COALESCE(?, title),
-        content = COALESCE(?, content),
-        excerpt = COALESCE(?, excerpt),
-        pinned = COALESCE(?, pinned),
-        project_id = CASE WHEN ? THEN ? ELSE project_id END,
-        folder_id = CASE WHEN ? THEN ? ELSE folder_id END,
-        metadata = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND workspace_id = ?
-  `).run(
-    title !== undefined ? title : null,
-    content !== undefined ? content : null,
-    excerpt !== undefined ? excerpt : null,
-    pinned !== undefined ? (pinned ? 1 : 0) : null,
-    projectId !== undefined ? 1 : 0, projectId || null,
-    folderId !== undefined ? 1 : 0, folderId || null,
-    JSON.stringify(meta),
-    req.params.id,
-    wid
-  );
+  await db.execute({
+    sql: `
+      UPDATE knowledge_items
+      SET title = COALESCE(?, title),
+          content = COALESCE(?, content),
+          excerpt = COALESCE(?, excerpt),
+          pinned = COALESCE(?, pinned),
+          project_id = CASE WHEN ? THEN ? ELSE project_id END,
+          folder_id = CASE WHEN ? THEN ? ELSE folder_id END,
+          metadata = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND workspace_id = ?
+    `,
+    args: [
+      title !== undefined ? title : null,
+      content !== undefined ? content : null,
+      excerpt !== undefined ? excerpt : null,
+      pinned !== undefined ? (pinned ? 1 : 0) : null,
+      projectId !== undefined ? 1 : 0, projectId || null,
+      folderId !== undefined ? 1 : 0, folderId || null,
+      JSON.stringify(meta),
+      req.params.id,
+      wid,
+    ],
+  });
 
-  const updated = db.prepare('SELECT * FROM knowledge_items WHERE id = ?').get(req.params.id);
-  res.json({ success: true, data: formatKnowledgeItem(updated, db) });
+  const updatedRes = await db.execute({
+    sql: 'SELECT * FROM knowledge_items WHERE id = ?',
+    args: [req.params.id],
+  });
+  const formatted = await formatKnowledgeItem(updatedRes.rows[0], db);
+  res.json({ success: true, data: formatted });
 });
 
 // DELETE /api/knowledge/:id
-router.delete('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const result = db.prepare('DELETE FROM knowledge_items WHERE id = ? AND workspace_id = ?')
-    .run(req.params.id, req.user!.workspaceId);
+  const result = await db.execute({
+    sql: 'DELETE FROM knowledge_items WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (result.changes === 0) {
+  if (result.rowsAffected === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Knowledge item not found.' },

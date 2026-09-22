@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { getDatabase } from './db';
+import { initDatabase, getDatabase } from './db';
 import { config } from './config';
 import authRouter from './routes/auth';
 import knowledgeRouter from './routes/knowledge';
@@ -19,8 +19,9 @@ import { csrfProtection } from './middleware/csrf';
 export function createApp(): express.Application {
   const app = express();
 
-  // Initialize DB
+  // Initialize DB & run migrations asynchronously
   getDatabase();
+  initDatabase().catch(err => console.error('[App] Database init error:', err));
 
   // Security Hardening: Disable Express signature
   app.disable('x-powered-by');
@@ -34,7 +35,7 @@ export function createApp(): express.Application {
           scriptSrc: ["'self'", "'unsafe-inline'"],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-          imgSrc: ["'self'", 'data:', 'blob:'],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
           connectSrc: ["'self'"],
           objectSrc: ["'none'"],
           frameSrc: ["'none'"],

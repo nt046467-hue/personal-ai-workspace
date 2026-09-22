@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
   LayoutList, 
@@ -7,7 +7,12 @@ import {
   Plus, 
   MoreHorizontal, 
   Pin,
-  BookOpen
+  BookOpen,
+  Sparkles,
+  Trash2,
+  Copy,
+  ExternalLink,
+  Check
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
 import './KnowledgeView.css';
@@ -17,6 +22,8 @@ interface KnowledgeViewProps {
   onOpenNote: (id: string) => void;
   onOpenDoc: (id: string) => void;
   onNewNote: () => void;
+  onDeleteNote?: (id: string) => void;
+  onAskAI?: (item: KnowledgeItem) => void;
 }
 
 export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
@@ -24,10 +31,25 @@ export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
   onOpenNote,
   onOpenDoc,
   onNewNote,
+  onDeleteNote,
+  onAskAI,
 }) => {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleWindowClick = () => {
+      setActiveMenuId(null);
+    };
+    if (activeMenuId) {
+      window.addEventListener('click', handleWindowClick);
+      return () => window.removeEventListener('click', handleWindowClick);
+    }
+  }, [activeMenuId]);
 
   const filteredItems = knowledge.filter(item => {
     const matchesFilter = filterType === 'all' || item.type === filterType;
@@ -152,12 +174,78 @@ export const KnowledgeView: React.FC<KnowledgeViewProps> = ({
               <div className="row-actions-col">
                 <button 
                   className="btn-icon" 
-                  onClick={(e) => { e.stopPropagation(); }}
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    setActiveMenuId(prev => prev === item.id ? null : item.id);
+                  }}
                   title="More actions"
                   aria-label="More actions"
+                  aria-expanded={activeMenuId === item.id}
                 >
                   <MoreHorizontal size={16} />
                 </button>
+
+                {activeMenuId === item.id && (
+                  <div 
+                    className="knowledge-dropdown-menu" 
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button 
+                      className="dropdown-item"
+                      onClick={() => {
+                        setActiveMenuId(null);
+                        handleOpenItem(item);
+                      }}
+                    >
+                      <ExternalLink size={13} />
+                      <span>Open {item.type === 'document' ? 'Document' : 'Note'}</span>
+                    </button>
+
+                    {onAskAI && (
+                      <button 
+                        className="dropdown-item"
+                        onClick={() => {
+                          setActiveMenuId(null);
+                          onAskAI(item);
+                        }}
+                      >
+                        <Sparkles size={13} />
+                        <span>Ask AI about this</span>
+                      </button>
+                    )}
+
+                    <button 
+                      className="dropdown-item"
+                      onClick={() => {
+                        navigator.clipboard.writeText(item.title);
+                        setCopiedId(item.id);
+                        setTimeout(() => setCopiedId(null), 1500);
+                        setActiveMenuId(null);
+                      }}
+                    >
+                      {copiedId === item.id ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{copiedId === item.id ? 'Copied!' : 'Copy Title'}</span>
+                    </button>
+
+                    {onDeleteNote && (
+                      <>
+                        <div className="dropdown-divider" />
+                        <button 
+                          className="dropdown-item danger"
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            if (window.confirm(`Delete "${item.title}"?`)) {
+                              onDeleteNote(item.id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={13} />
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}

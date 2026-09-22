@@ -5,7 +5,6 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 const router = Router();
 router.use(requireAuth);
 
-// Helper for relative timestamps
 function formatRelativeTime(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
@@ -16,22 +15,25 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 // GET /api/activities
-router.get('/', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const rows = db.prepare(`
-    SELECT * FROM activities
-    WHERE workspace_id = ?
-    ORDER BY created_at DESC
-    LIMIT 20
-  `).all(req.user!.workspaceId) as any[];
+  const rowsRes = await db.execute({
+    sql: `
+      SELECT * FROM activities
+      WHERE workspace_id = ?
+      ORDER BY created_at DESC
+      LIMIT 20
+    `,
+    args: [req.user!.workspaceId],
+  });
 
-  const formatted = rows.map(r => ({
-    id: r.id,
-    title: r.title,
-    detail: r.detail,
-    timestamp: formatRelativeTime(r.created_at),
+  const formatted = rowsRes.rows.map((r: any) => ({
+    id: String(r.id),
+    title: String(r.title),
+    detail: String(r.detail),
+    timestamp: formatRelativeTime(String(r.created_at)),
     type: r.type,
-    targetId: r.target_id,
+    targetId: r.target_id ? String(r.target_id) : undefined,
   }));
 
   res.json({ success: true, data: formatted });

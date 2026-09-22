@@ -24,21 +24,21 @@ const updateTaskSchema = taskSchema.partial();
 
 function formatTask(row: any): any {
   return {
-    id: row.id,
-    title: row.title,
-    project: row.project_name || 'General Workspace',
-    projectId: row.project_id || null,
-    dueDate: row.due_date || 'Today',
+    id: String(row.id),
+    title: String(row.title),
+    project: row.project_name ? String(row.project_name) : 'General Workspace',
+    projectId: row.project_id ? String(row.project_id) : null,
+    dueDate: row.due_date ? String(row.due_date) : 'Today',
     dueCategory: row.due_category || (row.completed ? 'completed' : 'today'),
     priority: row.priority || 'medium',
     completed: Boolean(row.completed),
     notes: row.notes || '',
-    estimatedMinutes: row.estimated_minutes || 30,
+    estimatedMinutes: Number(row.estimated_minutes || 30),
   };
 }
 
 // GET /api/tasks
-router.get('/', (req: AuthenticatedRequest, res: Response): void => {
+router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
   const workspaceId = req.user!.workspaceId;
   const { filter, projectId } = req.query;
@@ -66,58 +66,69 @@ router.get('/', (req: AuthenticatedRequest, res: Response): void => {
 
   query += " ORDER BY t.completed ASC, (t.priority = 'high') DESC, t.created_at DESC";
 
-  const rows = db.prepare(query).all(...params);
-  res.json({ success: true, data: rows.map(formatTask) });
+  const rows = await db.execute({ sql: query, args: params });
+  res.json({ success: true, data: rows.rows.map(formatTask) });
 });
 
 // POST /api/tasks
-router.post('/', validateBody(taskSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', validateBody(taskSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title, project, projectId, dueDate, dueCategory = 'today', priority = 'medium', notes, estimatedMinutes = 30 } = req.body;
   const targetProjectId = projectId || project || null;
 
   // Enforce tenant boundary on foreign project key
   if (targetProjectId) {
-    assertOwned('projects', targetProjectId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
+    await assertOwned('projects', targetProjectId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
   }
 
   const db = getDatabase();
   const id = `t-${crypto.randomBytes(6).toString('hex')}`;
 
-  db.prepare(`
-    INSERT INTO tasks (id, workspace_id, user_id, project_id, title, notes, priority, due_date, due_category, estimated_minutes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    req.user!.workspaceId,
-    req.user!.userId,
-    targetProjectId,
-    title.trim(),
-    notes || null,
-    priority,
-    dueDate || 'Today',
-    dueCategory,
-    estimatedMinutes
-  );
+  await db.execute({
+    sql: `
+      INSERT INTO tasks (id, workspace_id, user_id, project_id, title, notes, priority, due_date, due_category, estimated_minutes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    args: [
+      id,
+      req.user!.workspaceId,
+      req.user!.userId,
+      targetProjectId,
+      title.trim(),
+      notes || null,
+      priority,
+      dueDate || 'Today',
+      dueCategory,
+      estimatedMinutes,
+    ],
+  });
 
   // Record activity
-  db.prepare('INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(`act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, req.user!.workspaceId, req.user!.userId, 'Created task', title.trim(), 'task', id);
+  await db.execute({
+    sql: 'INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    args: [`act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, req.user!.workspaceId, req.user!.userId, 'Created task', title.trim(), 'task', id],
+  });
 
-  const created = db.prepare(`
-    SELECT t.*, p.name as project_name
-    FROM tasks t
-    LEFT JOIN projects p ON t.project_id = p.id AND p.workspace_id = t.workspace_id
-    WHERE t.id = ? AND t.workspace_id = ?
-  `).get(id, req.user!.workspaceId);
+  const createdRes = await db.execute({
+    sql: `
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id AND p.workspace_id = t.workspace_id
+      WHERE t.id = ? AND t.workspace_id = ?
+    `,
+    args: [id, req.user!.workspaceId],
+  });
 
-  res.status(201).json({ success: true, data: formatTask(created) });
+  res.status(201).json({ success: true, data: formatTask(createdRes.rows[0]) });
 });
 
 // PATCH /api/tasks/:id/toggle
-router.patch('/:id/toggle', (req: AuthenticatedRequest, res: Response): void => {
+router.patch('/:id/toggle', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const task = db.prepare('SELECT id, completed, title FROM tasks WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId) as any;
+  const taskRes = await db.execute({
+    sql: 'SELECT id, completed, title FROM tasks WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
+  const task = taskRes.rows[0] as any;
 
   if (!task) {
     res.status(404).json({
@@ -130,33 +141,42 @@ router.patch('/:id/toggle', (req: AuthenticatedRequest, res: Response): void => 
   const nextState = task.completed ? 0 : 1;
   const completedAt = nextState ? new Date().toISOString() : null;
 
-  db.prepare('UPDATE tasks SET completed = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ?')
-    .run(nextState, completedAt, req.params.id, req.user!.workspaceId);
+  await db.execute({
+    sql: 'UPDATE tasks SET completed = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ?',
+    args: [nextState, completedAt, req.params.id, req.user!.workspaceId],
+  });
 
   if (nextState) {
-    db.prepare('INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(`act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, req.user!.workspaceId, req.user!.userId, 'Completed task', task.title, 'task', req.params.id);
+    await db.execute({
+      sql: 'INSERT INTO activities (id, workspace_id, user_id, title, detail, type, target_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [`act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, req.user!.workspaceId, req.user!.userId, 'Completed task', task.title, 'task', req.params.id],
+    });
   }
 
-  const updated = db.prepare(`
-    SELECT t.*, p.name as project_name
-    FROM tasks t
-    LEFT JOIN projects p ON t.project_id = p.id AND p.workspace_id = t.workspace_id
-    WHERE t.id = ? AND t.workspace_id = ?
-  `).get(req.params.id, req.user!.workspaceId);
+  const updatedRes = await db.execute({
+    sql: `
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id AND p.workspace_id = t.workspace_id
+      WHERE t.id = ? AND t.workspace_id = ?
+    `,
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  res.json({ success: true, data: formatTask(updated) });
+  res.json({ success: true, data: formatTask(updatedRes.rows[0]) });
 });
 
 // PUT /api/tasks/:id
-router.put('/:id', validateBody(updateTaskSchema), (req: AuthenticatedRequest, res: Response): void => {
+router.put('/:id', validateBody(updateTaskSchema), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const { title, notes, priority, dueDate, dueCategory, estimatedMinutes, projectId } = req.body;
   const db = getDatabase();
 
-  const existing = db.prepare('SELECT id FROM tasks WHERE id = ? AND workspace_id = ?')
-    .get(req.params.id, req.user!.workspaceId);
+  const existingRes = await db.execute({
+    sql: 'SELECT id FROM tasks WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (!existing) {
+  if (existingRes.rows.length === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Task not found.' },
@@ -165,50 +185,58 @@ router.put('/:id', validateBody(updateTaskSchema), (req: AuthenticatedRequest, r
   }
 
   if (projectId) {
-    assertOwned('projects', projectId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
+    await assertOwned('projects', projectId, req.user!.workspaceId, 'Selected project does not exist in your workspace.');
   }
 
-  db.prepare(`
-    UPDATE tasks
-    SET title = COALESCE(?, title),
-        notes = COALESCE(?, notes),
-        priority = COALESCE(?, priority),
-        due_date = COALESCE(?, due_date),
-        due_category = COALESCE(?, due_category),
-        estimated_minutes = COALESCE(?, estimated_minutes),
-        project_id = CASE WHEN ? THEN ? ELSE project_id END,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND workspace_id = ?
-  `).run(
-    title || null,
-    notes !== undefined ? notes : null,
-    priority || null,
-    dueDate || null,
-    dueCategory || null,
-    estimatedMinutes || null,
-    projectId !== undefined ? 1 : 0,
-    projectId || null,
-    req.params.id,
-    req.user!.workspaceId
-  );
+  await db.execute({
+    sql: `
+      UPDATE tasks
+      SET title = COALESCE(?, title),
+          notes = COALESCE(?, notes),
+          priority = COALESCE(?, priority),
+          due_date = COALESCE(?, due_date),
+          due_category = COALESCE(?, due_category),
+          estimated_minutes = COALESCE(?, estimated_minutes),
+          project_id = CASE WHEN ? THEN ? ELSE project_id END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND workspace_id = ?
+    `,
+    args: [
+      title || null,
+      notes !== undefined ? notes : null,
+      priority || null,
+      dueDate || null,
+      dueCategory || null,
+      estimatedMinutes || null,
+      projectId !== undefined ? 1 : 0,
+      projectId || null,
+      req.params.id,
+      req.user!.workspaceId,
+    ],
+  });
 
-  const updated = db.prepare(`
-    SELECT t.*, p.name as project_name
-    FROM tasks t
-    LEFT JOIN projects p ON t.project_id = p.id AND p.workspace_id = t.workspace_id
-    WHERE t.id = ? AND t.workspace_id = ?
-  `).get(req.params.id, req.user!.workspaceId);
+  const updatedRes = await db.execute({
+    sql: `
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id AND p.workspace_id = t.workspace_id
+      WHERE t.id = ? AND t.workspace_id = ?
+    `,
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  res.json({ success: true, data: formatTask(updated) });
+  res.json({ success: true, data: formatTask(updatedRes.rows[0]) });
 });
 
 // DELETE /api/tasks/:id
-router.delete('/:id', (req: AuthenticatedRequest, res: Response): void => {
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
-  const result = db.prepare('DELETE FROM tasks WHERE id = ? AND workspace_id = ?')
-    .run(req.params.id, req.user!.workspaceId);
+  const result = await db.execute({
+    sql: 'DELETE FROM tasks WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
 
-  if (result.changes === 0) {
+  if (result.rowsAffected === 0) {
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Task not found.' },

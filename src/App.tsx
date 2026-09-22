@@ -70,6 +70,8 @@ export const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [_conversations, setConversations] = useState<any[]>([]);
 
   // AI Streaming State
   const [isAiStreaming, setIsAiStreaming] = useState(false);
@@ -117,17 +119,19 @@ export const App: React.FC = () => {
   // Fetch all live workspace data from backend
   const refreshWorkspaceData = useCallback(async () => {
     try {
-      const [fetchedTasks, fetchedKnowledge, fetchedProjects, fetchedActivities] = await Promise.all([
+      const [fetchedTasks, fetchedKnowledge, fetchedProjects, fetchedActivities, fetchedConversations] = await Promise.all([
         api.getTasks(),
         api.getKnowledge(),
         api.getProjects(),
         api.getActivities(),
+        api.getConversations().catch(() => []),
       ]);
 
       if (fetchedTasks) setTasks(fetchedTasks);
       if (fetchedKnowledge) setKnowledge(fetchedKnowledge);
       if (fetchedProjects) setProjects(fetchedProjects);
       if (fetchedActivities) setActivities(fetchedActivities);
+      if (fetchedConversations) setConversations(fetchedConversations);
     } catch (err) {
       console.error('[App] Error refreshing workspace data:', err);
     }
@@ -204,6 +208,16 @@ export const App: React.FC = () => {
       await api.deleteTask(id);
     } catch {
       showToast('Failed to delete task from server', 'error');
+    }
+  };
+
+  const handleDeleteKnowledge = async (id: string) => {
+    setKnowledge(prev => prev.filter(k => k.id !== id));
+    showToast('Knowledge item removed');
+    try {
+      await api.deleteKnowledgeItem(id);
+    } catch {
+      showToast('Failed to delete item from server', 'error');
     }
   };
 
@@ -318,6 +332,12 @@ export const App: React.FC = () => {
       actions: [],
     };
 
+    // Extract last 8 turns of conversation for multi-turn coherence
+    const history = aiMessages.slice(-8).map(m => ({
+      role: m.sender as 'user' | 'assistant',
+      content: m.content,
+    }));
+
     setAiMessages(prev => [...prev, userMsg, initialAssistantMsg]);
 
     const controller = new AbortController();
@@ -325,41 +345,57 @@ export const App: React.FC = () => {
     setIsAiStreaming(true);
 
     try {
-      await api.streamAIChat(text, undefined, {
-        onToken: (token) => {
-          setAiMessages(prev => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].sender === 'assistant') {
-              updated[lastIdx] = {
-                ...updated[lastIdx],
-                timestamp: 'Just now',
-                content: updated[lastIdx].content + token,
-              };
+      await api.streamAIChat(
+        text, 
+        activeConversationId || undefined, 
+        history, 
+        {
+          onStart: (data) => {
+            if (data.conversationId) {
+              setActiveConversationId(data.conversationId);
             }
-            return updated;
-          });
-        },
-        onDone: (result) => {
-          setAiMessages(prev => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].sender === 'assistant') {
-              updated[lastIdx] = {
-                ...updated[lastIdx],
-                timestamp: 'Just now',
-                content: result.content,
-                sources: result.sources,
-                actions: result.actions,
-              };
-            }
-            return updated;
-          });
-        },
-        onError: (errMsg) => {
-          showToast(errMsg, 'error');
-        },
-      }, controller.signal);
+          },
+          onToken: (token, msgId) => {
+            const targetId = msgId || assistantMsgId;
+            setAiMessages(prev =>
+              prev.map(m =>
+                m.id === targetId
+                  ? { ...m, timestamp: 'Just now', content: m.content + token }
+                  : m
+              )
+            );
+          },
+          onDone: (result) => {
+            const targetId = result.messageId || assistantMsgId;
+            setAiMessages(prev =>
+              prev.map(m =>
+                m.id === targetId
+                  ? {
+                      ...m,
+                      timestamp: 'Just now',
+                      content: result.content,
+                      sources: result.sources,
+                      actions: result.actions,
+                    }
+                  : m
+              )
+            );
+            api.getConversations().then(c => setConversations(c)).catch(() => {});
+          },
+          onError: (errMsg, msgId) => {
+            const targetId = msgId || assistantMsgId;
+            setAiMessages(prev =>
+              prev.map(m =>
+                m.id === targetId
+                  ? { ...m, timestamp: 'Just now', content: 'AI request failed. Please try again.' }
+                  : m
+              )
+            );
+            showToast(errMsg, 'error');
+          },
+        }, 
+        controller.signal
+      );
     } catch (err: any) {
       if (err.name === 'AbortError') {
         showToast('Generation stopped', 'info');
@@ -379,6 +415,17 @@ export const App: React.FC = () => {
     }
     setIsAiStreaming(false);
   }, []);
+
+  const handleNewChat = useCallback(() => {
+    if (isAiStreaming && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsAiStreaming(false);
+    }
+    setActiveConversationId(null);
+    setAiMessages([]);
+    showToast('Started new conversation', 'info');
+  }, [isAiStreaming]);
 
   const pendingTasksCount = tasks.filter(t => !t.completed).length;
   const activeNote = knowledge.find(k => k.id === selectedNoteId) || knowledge[0] || null;
@@ -410,6 +457,11 @@ export const App: React.FC = () => {
             onOpenNote={handleOpenNote}
             onOpenDoc={handleOpenDoc}
             onNewNote={() => handleSelectAddAction('note')}
+            onDeleteNote={handleDeleteKnowledge}
+            onAskAI={(item) => {
+              setCurrentTab('ai');
+              handleSendAIMessage(`Summarize key points and details from: "${item.title}"`);
+            }}
           />
         );
 
@@ -475,6 +527,7 @@ export const App: React.FC = () => {
             isStreaming={isAiStreaming}
             onStopStreaming={handleStopStreaming}
             onComposerFocusChange={setIsComposerFocused}
+            onNewChat={handleNewChat}
           />
         );
 
@@ -607,6 +660,12 @@ export const App: React.FC = () => {
                   onNavigate={setCurrentTab}
                   onOpenNote={handleOpenNote}
                   onOpenDoc={handleOpenDoc}
+                  tasks={tasks}
+                  knowledge={knowledge}
+                  onAskAI={(prompt) => {
+                    setCurrentTab('ai');
+                    handleSendAIMessage(prompt);
+                  }}
                 />
               )}
             </div>

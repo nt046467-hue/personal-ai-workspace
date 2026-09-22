@@ -366,46 +366,9 @@ export const INITIAL_ACTIVITIES: Activity[] = [
 ];
 
 export const AI_PROMPTS = [
-  'What should I work on today?',
-  'Find my Firebase security notes',
-  'Summarize the Architecture Spec',
-  'Draft an outline for offline CRDT sync',
+  'Summarise my latest note',
+  "What's due this week?",
+  'Find active projects',
+  'Search workspace',
 ];
 
-export const INITIAL_AI_MESSAGES: AIMessage[] = [
-  {
-    id: 'm-1',
-    sender: 'user',
-    timestamp: '10:14 AM',
-    content: 'What should I work on today? Summarize my urgent tasks and related knowledge.',
-  },
-  {
-    id: 'm-2',
-    sender: 'assistant',
-    timestamp: '10:15 AM',
-    content: `Good morning, Nabin. Based on your current workspace, you have **3 high-priority items** scheduled for completion today across two core projects.
-
-### Priority Actions:
-1. **Audit Firestore security rules for per-user tenant isolation**
-   * Project: *Cloud Infrastructure Audit* • Due at 5:00 PM
-   * Relevant requirement: verify \`request.auth.uid\` mapping on subcollection schemas.
-2. **Verify mobile touch targets and bottom sheet gestures**
-   * Project: *Design System v2* • Due at 7:30 PM
-   * Focus on iOS Safari bottom sheet gesture physics and 44px min hit targets.
-3. **Review Stripe webhook retry exponential backoff semantics**
-   * Project: *Personal AI Workspace* • Due at 9:00 PM
-   * Involves Redis idempotency locks on duplicate payments.
-
-Would you like me to open the Firebase Architecture document or filter your tasks list?`,
-    sources: [
-      { id: 'k-1', title: 'Firebase Security Architecture & Multi-Tenant Rules', type: 'note' },
-      { id: 'p-2', title: 'Cloud Infrastructure Audit', type: 'project' },
-      { id: 'k-2', title: 'Distributed Event-Driven Architecture Spec.pdf', type: 'document' },
-    ],
-    actions: [
-      { label: 'View Today’s Tasks', action: 'navigate_tasks' },
-      { label: 'Open Firebase Note', action: 'open_note', targetId: 'k-1' },
-      { label: 'View Architecture Spec', action: 'open_doc', targetId: 'k-2' },
-    ],
-  },
-];

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { put, del } from '@vercel/blob';
 import { config } from '../config';
 
 export class StorageService {
@@ -14,47 +15,67 @@ export class StorageService {
   }
 
   /**
-   * Get secure private directory for a workspace
+   * Store uploaded buffer securely in Vercel Blob (or local disk fallback in dev/test).
    */
-  public getWorkspaceDir(workspaceId: string): string {
-    // Sanitize workspaceId to prevent directory traversal
+  public async saveFile(
+    workspaceId: string,
+    originalName: string,
+    buffer: Buffer
+  ): Promise<{ filename: string; storagePath: string; size: number }> {
     const safeWorkspaceId = workspaceId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const dir = path.join(this.baseDir, 'workspaces', safeWorkspaceId);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    return dir;
-  }
-
-  /**
-   * Store uploaded buffer securely inside user's private workspace bucket
-   */
-  public async saveFile(workspaceId: string, originalName: string, buffer: Buffer): Promise<{ filename: string; storagePath: string; size: number }> {
-    const workspaceDir = this.getWorkspaceDir(workspaceId);
     const ext = path.extname(originalName).toLowerCase();
     const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, '');
-    const fileHash = crypto.randomBytes(16).toString('hex');
-    const filename = `${fileHash}${safeExt}`;
-    const storagePath = path.join('workspaces', workspaceId.replace(/[^a-zA-Z0-9_-]/g, '_'), filename);
-    const fullPath = path.join(workspaceDir, filename);
+    const randomHash = crypto.randomBytes(16).toString('hex');
+    const filename = `${randomHash}${safeExt}`;
+    const pathname = `workspaces/${safeWorkspaceId}/${filename}`;
 
+    // If Vercel Blob token is configured, upload to Blob storage
+    if (config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN) {
+      const blob = await put(pathname, buffer, {
+        access: 'public',
+        token: config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN,
+      });
+
+      return {
+        filename,
+        storagePath: blob.url,
+        size: buffer.length,
+      };
+    }
+
+    // Local disk fallback for local dev / tests without Blob token
+    const workspaceDir = path.join(this.baseDir, 'workspaces', safeWorkspaceId);
+    if (!fs.existsSync(workspaceDir)) {
+      fs.mkdirSync(workspaceDir, { recursive: true });
+    }
+    const fullPath = path.join(workspaceDir, filename);
     await fs.promises.writeFile(fullPath, buffer);
+
     return {
       filename,
-      storagePath,
+      storagePath: path.join('workspaces', safeWorkspaceId, filename),
       size: buffer.length,
     };
   }
 
   /**
-   * Read file content securely
+   * Fetch file buffer from Vercel Blob URL or local disk fallback.
    */
   public async getFileBuffer(storagePath: string): Promise<Buffer> {
-    const fullPath = path.join(this.baseDir, storagePath);
-    // Path traversal check
-    if (!fullPath.startsWith(this.baseDir)) {
-      throw new Error('Access denied: Invalid path traversal attempt');
+    if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
+      const res = await fetch(storagePath);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch file from storage: ${res.statusText}`);
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      return Buffer.from(arrayBuffer);
     }
+
+    // Local disk fallback
+    const fullPath = path.isAbsolute(storagePath)
+      ? storagePath
+      : path.join(this.baseDir, storagePath);
+
     if (!fs.existsSync(fullPath)) {
       throw new Error('File not found in storage');
     }
@@ -62,11 +83,21 @@ export class StorageService {
   }
 
   /**
-   * Delete file securely
+   * Delete file from Vercel Blob or local disk.
    */
   public async deleteFile(storagePath: string): Promise<void> {
-    const fullPath = path.join(this.baseDir, storagePath);
-    if (fullPath.startsWith(this.baseDir) && fs.existsSync(fullPath)) {
+    if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
+      await del(storagePath, {
+        token: config.blobReadWriteToken || process.env.BLOB_READ_WRITE_TOKEN,
+      });
+      return;
+    }
+
+    const fullPath = path.isAbsolute(storagePath)
+      ? storagePath
+      : path.join(this.baseDir, storagePath);
+
+    if (fs.existsSync(fullPath)) {
       await fs.promises.unlink(fullPath);
     }
   }

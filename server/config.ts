@@ -1,4 +1,5 @@
 import path from 'path';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -7,6 +8,11 @@ export interface ServerConfig {
   env: 'development' | 'production' | 'test';
   port: number;
   jwtSecret: string;
+  tursoDatabaseUrl: string;
+  tursoAuthToken?: string;
+  blobReadWriteToken?: string;
+  appEncryptionKey?: string;
+  appOrigin: string;
   storageDir: string;
   dbPath: string;
   aiProvider: 'local' | 'openai' | 'anthropic' | 'gemini' | 'ollama';
@@ -16,8 +22,6 @@ export interface ServerConfig {
   appOrigins: string[];
   seedDemo: boolean;
 }
-
-import crypto from 'crypto';
 
 const env = (process.env.NODE_ENV as ServerConfig['env']) || 'development';
 
@@ -39,6 +43,11 @@ export const config: ServerConfig = {
   env,
   port: parseInt(process.env.PORT || '3001', 10),
   jwtSecret,
+  tursoDatabaseUrl: process.env.TURSO_DATABASE_URL || '',
+  tursoAuthToken: process.env.TURSO_AUTH_TOKEN || undefined,
+  blobReadWriteToken: process.env.BLOB_READ_WRITE_TOKEN || undefined,
+  appEncryptionKey: process.env.APP_ENCRYPTION_KEY || undefined,
+  appOrigin: process.env.APP_ORIGIN || 'http://localhost:5173',
   storageDir: path.resolve(process.cwd(), process.env.STORAGE_DIR || './storage'),
   dbPath: path.resolve(process.cwd(), process.env.STORAGE_DIR || './storage', 'myspace.sqlite'),
   aiProvider: (process.env.AI_PROVIDER as ServerConfig['aiProvider']) || 'local',

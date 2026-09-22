@@ -207,6 +207,26 @@ class ApiService {
     return this.request<any[]>(`/search?q=${encodeURIComponent(query)}&category=${category}`);
   }
 
+  // --- Conversation APIs ---
+  public async getConversations(): Promise<any[]> {
+    return this.request<any[]>('/conversations');
+  }
+
+  public async getConversationMessages(id: string): Promise<any[]> {
+    return this.request<any[]>(`/conversations/${id}/messages`);
+  }
+
+  public async createConversation(title?: string): Promise<any> {
+    return this.request<any>('/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  public async deleteConversation(id: string): Promise<void> {
+    await this.request(`/conversations/${id}`, { method: 'DELETE' });
+  }
+
   // --- AI APIs ---
   public async getAIBrief(): Promise<{ brief: string; taskCount: number; projectCount: number }> {
     return this.request<{ brief: string; taskCount: number; projectCount: number }>('/ai/brief');
@@ -215,17 +235,20 @@ class ApiService {
   /**
    * Stream AI Chat using Server-Sent Events.
    * Uses cookie-based auth; no Bearer token in header.
+   * Callbacks pass messageId for robust message state synchronization.
    */
   public async streamAIChat(
     message: string,
     conversationId?: string,
+    history?: { role: 'user' | 'assistant' | 'system'; content: string }[],
     callbacks?: {
-      onToken?: (token: string) => void;
-      onDone?: (result: { content: string; sources: any[]; actions: any[] }) => void;
-      onError?: (err: string) => void;
+      onStart?: (data: { conversationId: string; userMessageId: string; assistantMessageId: string }) => void;
+      onToken?: (token: string, messageId?: string) => void;
+      onDone?: (result: { content: string; sources: any[]; actions: any[]; messageId?: string }) => void;
+      onError?: (err: string, messageId?: string) => void;
     },
     signal?: AbortSignal
-  ): Promise<{ content: string; sources: any[]; actions: any[] }> {
+  ): Promise<{ content: string; sources: any[]; actions: any[]; messageId?: string }> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const csrf = this.getCsrfToken();
     if (csrf) headers['X-CSRF-Token'] = csrf;
@@ -234,7 +257,7 @@ class ApiService {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ message, conversationId }),
+      body: JSON.stringify({ message, conversationId, history }),
       signal,
     });
 
@@ -252,6 +275,7 @@ class ApiService {
     let accumulatedText = '';
     let sources: any[] = [];
     let actions: any[] = [];
+    let currentAssistantMsgId: string | undefined;
 
     if (reader) {
       let done = false;
@@ -267,20 +291,26 @@ class ApiService {
 
           for (const line of lines) {
             const clean = line.trim();
-            if (clean.startsWith(':')) continue; // heartbeat comment line
+            if (clean.startsWith(':')) continue; // heartbeat / ping line
             if (clean.startsWith('data: ')) {
               try {
                 const payload = JSON.parse(clean.slice(6));
-                if (payload.type === 'token') {
+                if (payload.type === 'start') {
+                  currentAssistantMsgId = payload.assistantMessageId;
+                  callbacks?.onStart?.(payload);
+                } else if (payload.type === 'token') {
+                  const msgId = payload.messageId || currentAssistantMsgId;
                   accumulatedText += payload.token;
-                  callbacks?.onToken?.(payload.token);
+                  callbacks?.onToken?.(payload.token, msgId);
                 } else if (payload.type === 'done') {
+                  const msgId = payload.messageId || currentAssistantMsgId;
                   accumulatedText = payload.content;
                   sources = payload.sources || [];
                   actions = payload.actions || [];
-                  callbacks?.onDone?.({ content: accumulatedText, sources, actions });
+                  callbacks?.onDone?.({ content: accumulatedText, sources, actions, messageId: msgId });
                 } else if (payload.type === 'error') {
-                  callbacks?.onError?.(payload.message);
+                  const msgId = payload.messageId || currentAssistantMsgId;
+                  callbacks?.onError?.(payload.message, msgId);
                 }
               } catch { /* skip malformed SSE */ }
             }
@@ -289,8 +319,9 @@ class ApiService {
       }
     }
 
-    return { content: accumulatedText, sources, actions };
+    return { content: accumulatedText, sources, actions, messageId: currentAssistantMsgId };
   }
 }
 
 export const api = new ApiService();
+
