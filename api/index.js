@@ -2343,9 +2343,22 @@ import { put, del } from "@vercel/blob";
 var StorageService = class {
   baseDir;
   constructor() {
-    this.baseDir = config.storageDir;
-    if (!fs3.existsSync(this.baseDir)) {
-      fs3.mkdirSync(this.baseDir, { recursive: true });
+    if (process.env.VERCEL) {
+      this.baseDir = "/tmp/myspace-storage";
+    } else {
+      this.baseDir = config.storageDir;
+    }
+    if (!process.env.VERCEL) {
+      if (!fs3.existsSync(this.baseDir)) {
+        fs3.mkdirSync(this.baseDir, { recursive: true });
+      }
+    } else {
+      try {
+        if (!fs3.existsSync(this.baseDir)) {
+          fs3.mkdirSync(this.baseDir, { recursive: true });
+        }
+      } catch {
+      }
     }
   }
   /**

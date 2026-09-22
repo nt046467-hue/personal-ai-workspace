@@ -8,9 +8,30 @@ export class StorageService {
   private baseDir: string;
 
   constructor() {
-    this.baseDir = config.storageDir;
-    if (!fs.existsSync(this.baseDir)) {
-      fs.mkdirSync(this.baseDir, { recursive: true });
+    // On Vercel, /var/task is read-only. Use /tmp for local fallback, but Blob storage
+    // is used for all actual file uploads when BLOB_READ_WRITE_TOKEN is configured.
+    if (process.env.VERCEL) {
+      // Use /tmp (the only writable directory on Vercel) for any local fallback needs.
+      // In practice, all file storage goes through Vercel Blob when deployed.
+      this.baseDir = '/tmp/myspace-storage';
+    } else {
+      this.baseDir = config.storageDir;
+    }
+
+    // Only attempt to create the directory if NOT on Vercel's read-only filesystem
+    if (!process.env.VERCEL) {
+      if (!fs.existsSync(this.baseDir)) {
+        fs.mkdirSync(this.baseDir, { recursive: true });
+      }
+    } else {
+      // On Vercel, /tmp is always writable — create the fallback dir lazily only if needed
+      try {
+        if (!fs.existsSync(this.baseDir)) {
+          fs.mkdirSync(this.baseDir, { recursive: true });
+        }
+      } catch {
+        // Ignore — Blob storage is used for all uploads on Vercel
+      }
     }
   }
 
