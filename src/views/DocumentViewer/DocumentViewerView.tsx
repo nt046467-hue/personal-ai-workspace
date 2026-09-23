@@ -53,10 +53,23 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'assistant'; text: string; time: string }>>([
     {
       sender: 'assistant',
-      text: `I've indexed **${document.title}** (${document.pageCount || 18} pages). You can ask me to summarize key findings, extract SLAs, or generate architectural trade-offs.`,
+      text: `I've indexed **${document?.title || 'this document'}** (${document?.pageCount || 18} pages). You can ask me to summarize key findings, extract SLAs, or generate architectural trade-offs.`,
       time: 'Just now',
     },
   ]);
+
+  if (!document) {
+    return (
+      <div className="doc-viewer-wrapper" style={{ padding: '48px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <h3 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>Document Not Found</h3>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>This document is no longer available or was removed.</p>
+        <button className="btn btn-primary" onClick={onBack}>
+          <ArrowLeft size={16} />
+          <span>Back to Knowledge</span>
+        </button>
+      </div>
+    );
+  }
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = textToSend || inputMessage;

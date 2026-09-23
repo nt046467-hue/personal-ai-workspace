@@ -9,14 +9,23 @@ import './Markdown.css';
 interface MarkdownProps {
   content: string;
   className?: string;
+  /**
+   * When provided, task-list checkboxes become interactive.
+   * Called with the ordinal index of the checkbox among all task-list items
+   * in the document (0-based) and its new checked state.
+   */
+  onTaskToggle?: (taskIndex: number, checked: boolean) => void;
 }
 
 const sanitizeSchema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames || []), 'mark'],
+  tagNames: [...(defaultSchema.tagNames || []), 'mark', 'input'],
   attributes: {
     ...defaultSchema.attributes,
     code: [...(defaultSchema.attributes?.code || []), 'className'],
+    // Allow type, checked, disabled on <input> so GFM task-list checkboxes
+    // survive sanitization. Without this they are silently stripped.
+    input: ['type', 'checked', 'disabled'],
   },
 };
 
@@ -73,7 +82,45 @@ const CodeRenderer: React.FC<{
   );
 };
 
-export const Markdown: React.FC<MarkdownProps> = ({ content, className }) => {
+export const Markdown: React.FC<MarkdownProps> = ({ content, className, onTaskToggle }) => {
+  // Plain mutable object — created fresh every render, so ordinal counts are
+  // always in sync with the markdown source. Each InputRenderer call increments
+  // counter.n to capture its ordinal position. No ref mutation needed.
+  const counter = { n: 0 };
+
+  const InputRenderer: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => {
+    if (props.type !== 'checkbox') {
+      return <input {...props} />;
+    }
+
+    // Capture the ordinal index for this checkbox at render time
+    const myIndex = counter.n;
+    counter.n += 1;
+
+    if (onTaskToggle) {
+      return (
+        <input
+          {...props}
+          type="checkbox"
+          disabled={false}
+          className="markdown-task-checkbox"
+          onChange={(e) => onTaskToggle(myIndex, e.target.checked)}
+        />
+      );
+    }
+
+    // Read-only mode (no handler provided — e.g. AI chat view)
+    return (
+      <input
+        {...props}
+        type="checkbox"
+        disabled
+        readOnly
+        className="markdown-task-checkbox markdown-task-checkbox--readonly"
+      />
+    );
+  };
+
   return (
     <div className={`markdown-renderer ${className || ''}`}>
       <ReactMarkdown
@@ -82,6 +129,7 @@ export const Markdown: React.FC<MarkdownProps> = ({ content, className }) => {
         components={{
           code: CodeRenderer,
           pre: ({ children }) => <>{children}</>,
+          input: InputRenderer,
           table: ({ children, ...props }) => (
             <div className="markdown-table-wrapper">
               <table className="markdown-table" {...props}>

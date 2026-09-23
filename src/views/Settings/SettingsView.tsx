@@ -64,10 +64,14 @@ const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     keyLabel: 'Get Gemini Key',
     keyPlaceholder: 'AIzaSy...',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    // Google periodically retires Gemini model IDs (gemini-1.5-flash was retired
+    // Sep 2025, gemini-2.5-flash is being retired in 2026). If models start
+    // returning 404s, check https://ai.google.dev/gemini-api/docs/deprecations
+    // for the current recommended model and update this list.
     models: [
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Fast & High Quality)', tag: 'Recommended' },
-      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Reasoning & Analysis)', tag: 'Pro' },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Next-Gen Preview)', tag: 'Preview' },
+      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Fast & High Quality)', tag: 'Recommended' },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Stable)', tag: 'Stable' },
+      { id: 'gemini-2.0-flash-thinking-exp', label: 'Gemini 2.0 Flash Thinking (Reasoning)', tag: 'Reasoning' },
     ],
   },
   groq: {
@@ -192,7 +196,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           setByokKeyMasked(null);
           const def = PROVIDER_PRESETS.gemini;
           setByokBaseUrl(def.baseUrl);
-          setByokModel(def.models[0]?.id || 'gemini-1.5-flash');
+          // Fall back to the first preset (gemini-3.5-flash) rather than a
+          // hardcoded string so this stays correct when the preset list is updated.
+          setByokModel(def.models[0]?.id ?? '');
           setCustomModelMode(false);
         }
         if (d.dailyCap) setDailyCap(d.dailyCap);
@@ -552,7 +558,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="settings-text-input"
                     value={byokModel}
                     onChange={(e) => setByokModel(e.target.value)}
-                    placeholder="e.g. gemini-1.5-flash, llama-3.3-70b-versatile, gpt-4o"
+                    placeholder="e.g. gemini-3.5-flash, llama-3.3-70b-versatile, gpt-4o"
                   />
                 )}
               </div>

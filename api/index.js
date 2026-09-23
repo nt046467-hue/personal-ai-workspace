@@ -4029,7 +4029,7 @@ router11.put("/ai", validateBody(aiSettingsSchema), async (req, res) => {
   const { provider, model, baseUrl, apiKey } = req.body;
   const db = getDatabase();
   const targetBaseUrl = baseUrl && String(baseUrl).trim().length > 0 ? String(baseUrl).trim().replace(/\/$/, "") : getDefaultBaseUrl(provider);
-  const targetModel = model && String(model).trim().length > 0 ? String(model).trim() : provider === "gemini" ? "gemini-1.5-flash" : provider === "groq" ? "llama-3.3-70b-versatile" : provider === "openrouter" ? "anthropic/claude-3.5-sonnet" : "gpt-4o-mini";
+  const targetModel = model && String(model).trim().length > 0 ? String(model).trim() : provider === "gemini" ? "gemini-3.5-flash" : provider === "groq" ? "llama-3.3-70b-versatile" : provider === "openrouter" ? "anthropic/claude-3.5-sonnet" : "gpt-4o-mini";
   let effectiveApiKey = apiKey && String(apiKey).trim().length > 0 ? String(apiKey).trim() : "";
   if (!effectiveApiKey) {
     const existingRes = await db.execute({
@@ -4101,7 +4101,7 @@ router11.put("/ai", validateBody(aiSettingsSchema), async (req, res) => {
         success: false,
         error: {
           code: "PROVIDER_TEST_FAILED",
-          message: parsedMsg ? `Upstream error (${testRes.status}): ${parsedMsg}` : `Could not connect to ${provider} (HTTP ${testRes.status}). Please check your API key and model name.`
+          message: parsedMsg ? `Upstream error (${testRes.status}): ${parsedMsg}` : testRes.status === 404 ? `Could not connect to ${provider} using model '${targetModel}' (HTTP 404). This model may no longer exist \u2014 check https://ai.google.dev/gemini-api/docs/deprecations (Gemini) or the provider's docs for the current model name.` : `Could not connect to ${provider} using model '${targetModel}' (HTTP ${testRes.status}). Please check your API key and model name.`
         }
       });
       return;

@@ -134,12 +134,16 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
     ? String(baseUrl).trim().replace(/\/$/, '')
     : getDefaultBaseUrl(provider);
 
+  // Google periodically retires Gemini model IDs (gemini-1.5-flash was retired
+  // Sep 2025, gemini-2.5-flash is being retired in 2026). If this starts
+  // returning 404s again, check https://ai.google.dev/gemini-api/docs/deprecations
+  // for the current recommended model and update this default.
   const targetModel = (model && String(model).trim().length > 0)
     ? String(model).trim()
-    : (provider === 'gemini' 
-        ? 'gemini-1.5-flash' 
-        : provider === 'groq' 
-        ? 'llama-3.3-70b-versatile' 
+    : (provider === 'gemini'
+        ? 'gemini-3.5-flash'
+        : provider === 'groq'
+        ? 'llama-3.3-70b-versatile'
         : provider === 'openrouter'
         ? 'anthropic/claude-3.5-sonnet'
         : 'gpt-4o-mini');
@@ -224,9 +228,11 @@ router.put('/ai', validateBody(aiSettingsSchema), async (req: AuthenticatedReque
         success: false,
         error: {
           code: 'PROVIDER_TEST_FAILED',
-          message: parsedMsg 
+          message: parsedMsg
             ? `Upstream error (${testRes.status}): ${parsedMsg}`
-            : `Could not connect to ${provider} (HTTP ${testRes.status}). Please check your API key and model name.`,
+            : testRes.status === 404
+            ? `Could not connect to ${provider} using model '${targetModel}' (HTTP 404). This model may no longer exist — check https://ai.google.dev/gemini-api/docs/deprecations (Gemini) or the provider's docs for the current model name.`
+            : `Could not connect to ${provider} using model '${targetModel}' (HTTP ${testRes.status}). Please check your API key and model name.`,
         },
       });
       return;

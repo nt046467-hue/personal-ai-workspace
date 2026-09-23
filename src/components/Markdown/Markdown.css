@@ -233,3 +233,60 @@
   border-radius: 2px;
   font-weight: 500;
 }
+
+/* GFM Task-list Checkboxes */
+.markdown-task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-default, rgba(255,255,255,0.2));
+  border-radius: 3px;
+  background: transparent;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.markdown-task-checkbox:not(.markdown-task-checkbox--readonly) {
+  cursor: pointer;
+}
+
+.markdown-task-checkbox:checked {
+  background-color: var(--accent-primary, hsl(225, 85%, 60%));
+  border-color: var(--accent-primary, hsl(225, 85%, 60%));
+}
+
+.markdown-task-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 5px;
+  height: 8px;
+  border: 1.5px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(40deg);
+}
+
+.markdown-task-checkbox:not(.markdown-task-checkbox--readonly):hover {
+  border-color: var(--accent-primary, hsl(225, 85%, 60%));
+}
+
+.markdown-task-checkbox--readonly {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Ensure task-list items lay out cleanly */
+.markdown-renderer ul li:has(.markdown-task-checkbox) {
+  list-style: none;
+  margin-left: -1.4rem;
+  display: flex;
+  align-items: baseline;
+}
+

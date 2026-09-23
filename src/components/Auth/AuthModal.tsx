@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, Lock, Mail, X, ArrowRight, ShieldCheck, Eye, EyeOff, Loader2, Check, KeyRound, ChevronLeft, SendHorizonal } from 'lucide-react';
 import { MySpaceLogo } from '../Brand/MySpaceLogo';
 import { api } from '../../services/api';
@@ -16,6 +16,15 @@ interface AuthModalProps {
   onAuthSuccess: (user: UserSession) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   initialMode?: AuthMode;
+}
+
+/**
+ * Scrolls the given element into view inside its scroll container.
+ * Uses `block: 'nearest'` so it doesn't cause unexpected jumps when
+ * the modal is nested inside other scroll ancestors.
+ */
+function scrollFieldIntoView(el: HTMLElement) {
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -37,7 +46,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [forgotEmailError, setForgotEmailError] = useState<string | undefined>();
   const [forgotSent, setForgotSent] = useState(false);
 
+  // Track the last focused input element so the visualViewport resize handler
+  // can re-scroll it into view after the Android keyboard finishes animating.
+  const lastFocusedRef = useRef<HTMLInputElement | null>(null);
+
+  // ── visualViewport keyboard-aware scroll ────────────────────────────────────
+  // On Android, the viewport resize from the keyboard opening fires AFTER the
+  // focus event, so we need to listen here and re-scroll the focused element.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+
+    const handleResize = () => {
+      if (lastFocusedRef.current && document.activeElement === lastFocusedRef.current) {
+        // Small delay to let the browser finish repositioning the viewport
+        setTimeout(() => {
+          if (lastFocusedRef.current) scrollFieldIntoView(lastFocusedRef.current);
+        }, 100);
+      }
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => window.visualViewport!.removeEventListener('resize', handleResize);
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  // ── onFocus handler for every text input ───────────────────────────────────
+  // Scrolls the field into view after a short delay so the keyboard has had
+  // time to start opening (especially important on iOS where the keyboard
+  // animation takes ~300ms before the viewport shrinks).
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    lastFocusedRef.current = el;
+    setTimeout(() => scrollFieldIntoView(el), 300);
+  };
 
   const handleClose = () => {
     setShowPassword(false);
@@ -45,6 +88,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setForgotEmail('');
     setForgotEmailError(undefined);
     setForgotSent(false);
+    lastFocusedRef.current = null;
     onClose();
   };
 
@@ -271,6 +315,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         setForgotEmail(e.target.value);
                         if (forgotEmailError) setForgotEmailError(undefined);
                       }}
+                      onFocus={handleInputFocus}
                       autoComplete="email"
                       aria-invalid={!!forgotEmailError}
                       aria-describedby={forgotEmailError ? 'forgot-email-error' : undefined}
@@ -378,6 +423,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setName(e.target.value);
                     if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
                   }}
+                  onFocus={handleInputFocus}
                   autoComplete="name"
                   aria-invalid={!!fieldErrors.name}
                   aria-describedby={fieldErrors.name ? 'auth-name-error' : undefined}
@@ -405,6 +451,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setEmail(e.target.value);
                   if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
                 }}
+                onFocus={handleInputFocus}
                 autoComplete="email"
                 aria-invalid={!!fieldErrors.email}
                 aria-describedby={fieldErrors.email ? 'auth-email-error' : undefined}
@@ -444,6 +491,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setPassword(e.target.value);
                   if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
                 }}
+                onFocus={handleInputFocus}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 className="has-toggle"
                 aria-invalid={!!fieldErrors.password}

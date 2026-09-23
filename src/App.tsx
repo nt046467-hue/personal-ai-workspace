@@ -15,6 +15,7 @@ import { AuthModal } from './components/Auth/AuthModal';
 import { ResetPasswordView } from './views/ResetPassword/ResetPasswordView';
 import { MobileNotificationSheet } from './components/Notifications/MobileNotificationSheet';
 import { useNotifications } from './hooks/useNotifications';
+import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
 
 import { HomeView } from './views/Home/HomeView';
 import { KnowledgeView } from './views/Knowledge/KnowledgeView';
@@ -527,7 +528,7 @@ export const App: React.FC = () => {
 
   const pendingTasksCount = tasks.filter(t => !t.completed).length;
   const activeNote = knowledge.find(k => k.id === selectedNoteId) || knowledge[0] || null;
-  const activeDoc = knowledge.find(k => k.id === selectedDocId) || knowledge[1] || null;
+  const activeDoc = knowledge.find(k => k.id === selectedDocId) || knowledge.find(k => k.type === 'document') || knowledge[1] || null;
 
   // Render Active Main View
   const renderMainView = () => {
@@ -567,6 +568,17 @@ export const App: React.FC = () => {
         );
 
       case 'note-editor':
+        if (!activeNote) {
+          return (
+            <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+              <h3 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>No Note Selected</h3>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>Please choose a note from Knowledge.</p>
+              <button className="btn btn-primary btn-sm" onClick={() => handleSelectTab('knowledge')}>
+                Back to Knowledge
+              </button>
+            </div>
+          );
+        }
         return (
           <NoteEditorView
             note={activeNote}
@@ -581,6 +593,17 @@ export const App: React.FC = () => {
         );
 
       case 'doc-viewer':
+        if (!activeDoc) {
+          return (
+            <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+              <h3 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>No Document Selected</h3>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>Please choose a document from Knowledge.</p>
+              <button className="btn btn-primary btn-sm" onClick={() => handleSelectTab('knowledge')}>
+                Back to Knowledge
+              </button>
+            </div>
+          );
+        }
         return (
           <DocumentViewerView
             document={activeDoc}
@@ -748,7 +771,9 @@ export const App: React.FC = () => {
           />
 
           <main className={`mobile-main-canvas ${currentTab === 'ai' ? 'is-ai-view' : ''}`} role="main">
-            {renderMainView()}
+            <ErrorBoundary onReset={() => handleSelectTab('home')}>
+              {renderMainView()}
+            </ErrorBoundary>
           </main>
 
           <MobileBottomNav
@@ -799,7 +824,9 @@ export const App: React.FC = () => {
 
             <div className="desktop-canvas-row">
               <main className="desktop-main-canvas" role="main">
-                {renderMainView()}
+                <ErrorBoundary onReset={() => handleSelectTab('home')}>
+                  {renderMainView()}
+                </ErrorBoundary>
               </main>
 
               {currentTab !== 'note-editor' && currentTab !== 'doc-viewer' && (

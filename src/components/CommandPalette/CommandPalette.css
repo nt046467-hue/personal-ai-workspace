@@ -14,32 +14,83 @@
 }
 
 .command-search-header {
+  position: relative;
   display: flex;
   align-items: center;
-  padding: 0 var(--space-4);
   height: 54px;
   border-bottom: 1px solid var(--border-subtle);
   background-color: var(--bg-surface);
-  gap: var(--space-3);
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .command-search-icon {
+  position: absolute;
+  left: var(--space-4);
   color: var(--text-muted);
   flex-shrink: 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .command-search-input {
-  flex: 1;
-  background: transparent;
-  border: none;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font-family: inherit;
   font-size: var(--text-base);
   color: var(--text-primary);
+  caret-color: var(--text-primary);
+  /* Left padding gives dedicated space for icon: 16px edge + 18px icon + 12px gap = 46px */
+  padding-left: 46px;
+  /* Right padding gives dedicated space for ESC badge and clear button so text/caret never overlap */
+  padding-right: 80px;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.command-search-input:focus {
+  outline: none !important;
+  border: none !important;
   box-shadow: none !important;
-  padding: 0;
+  border-color: transparent !important;
+}
+
+.command-search-input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.command-search-actions {
+  position: absolute;
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  z-index: 2;
 }
 
 .command-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-xs);
+  transition: color var(--duration-fast) ease;
+}
+
+.command-clear-btn:hover {
+  color: var(--text-primary);
 }
 
 .command-esc-badge {
@@ -51,6 +102,8 @@
   border-radius: var(--radius-xs);
   padding: 2px 6px;
   cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
 }
 
 .command-results-list {
@@ -73,6 +126,50 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
+}
+
+.command-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: var(--space-4);
+}
+
+.command-section-clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  transition: color var(--duration-fast) ease;
+}
+
+.command-section-clear-btn:hover {
+  color: var(--text-secondary);
+}
+
+.item-remove-btn {
+  opacity: 0;
+  color: var(--text-muted);
+  padding: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.command-item:hover .item-remove-btn {
+  opacity: 1;
+}
+
+.item-remove-btn:hover {
+  color: var(--text-primary);
 }
 
 .command-item {
