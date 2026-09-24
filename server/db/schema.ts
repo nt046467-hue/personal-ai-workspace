@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
   summary TEXT,
   pinned INTEGER DEFAULT 0 CHECK (pinned IN (0, 1)),
   metadata TEXT DEFAULT '{}',
+  last_viewed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

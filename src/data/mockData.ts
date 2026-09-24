@@ -23,6 +23,8 @@ export interface KnowledgeItem {
   content?: string;
   fileSize?: string;
   pageCount?: number;
+  lastViewedAt?: string;
+  projectId?: string | null;
 }
 
 export interface Project {
@@ -44,7 +46,7 @@ export interface Activity {
   title: string;
   detail: string;
   timestamp: string;
-  type: 'task' | 'document' | 'project' | 'ai';
+  type: 'task' | 'document' | 'project' | 'ai' | 'note';
   targetId?: string;
 }
 

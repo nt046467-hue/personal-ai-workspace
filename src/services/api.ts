@@ -212,6 +212,10 @@ class ApiService {
     await this.request(`/knowledge/${id}`, { method: 'DELETE' });
   }
 
+  public async recordKnowledgeView(id: string): Promise<void> {
+    await this.request(`/knowledge/${id}/view`, { method: 'PATCH' });
+  }
+
   // --- Document APIs ---
   public async uploadDocument(file: File): Promise<{ id: string; documentId: string; title: string }> {
     const formData = new FormData();
@@ -252,11 +256,15 @@ class ApiService {
     return this.request<any[]>('/bookmarks');
   }
 
-  public async createBookmark(data: { url: string; title?: string; description?: string; projectId?: string; tags?: string[] }): Promise<any> {
+  public async createBookmark(data: { url: string; title?: string; description?: string; projectId?: string; tags?: string[]; notes?: string }): Promise<any> {
     return this.request<any>('/bookmarks', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  public async deleteBookmark(id: string): Promise<void> {
+    await this.request(`/bookmarks/${id}`, { method: 'DELETE' });
   }
 
   // --- Search APIs ---

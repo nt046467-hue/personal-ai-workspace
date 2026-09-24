@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, 
   Circle, 
@@ -38,6 +38,119 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [newPriority, setNewPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [newDueDate, setNewDueDate] = useState('Today, 6:00 PM');
   const [newCategory, setNewCategory] = useState<'today' | 'tomorrow' | 'upcoming'>('today');
+
+  // Keyboard and visual viewport positioning state for mobile Add Task modal
+  const [modalViewportStyle, setModalViewportStyle] = useState<React.CSSProperties>({});
+  const lastFocusedInputRef = useRef<HTMLElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isAddModalOpen) return;
+    if (typeof window === 'undefined') return;
+
+    // Lock body scroll while modal is open
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const scrollFocusedField = (el: HTMLElement) => {
+      if (!modalRef.current || !modalRef.current.contains(el)) return;
+      const targetField = (el.closest('.form-group') as HTMLElement) || el;
+      targetField.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
+    const updateViewportPosition = () => {
+      // Desktop layout is completely untouched
+      if (window.innerWidth > 768) {
+        setModalViewportStyle({});
+        return;
+      }
+
+      const vv = window.visualViewport;
+      if (!vv) {
+        setModalViewportStyle({
+          '--task-modal-bottom': '0px',
+          '--task-modal-max-height': 'calc(100dvh - 24px)',
+        } as React.CSSProperties);
+        return;
+      }
+
+      // Calculate bottom offset for virtual keyboard occlusion (gap between layout and visual viewport)
+      const keyboardBottom = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
+      const isKeyboardOpen = keyboardBottom > 50 || (window.innerHeight - vv.height) > 100;
+
+      // Available modal height strictly bounded inside the visual viewport with safe headroom at top
+      const maxModalHeight = Math.max(180, Math.floor(vv.height - 16));
+
+      setModalViewportStyle({
+        '--task-modal-bottom': `${keyboardBottom}px`,
+        '--task-modal-max-height': `${maxModalHeight}px`,
+        '--task-modal-padding-bottom': isKeyboardOpen 
+          ? 'var(--space-4)' 
+          : 'calc(var(--space-6) + env(safe-area-inset-bottom, 0px))',
+      } as React.CSSProperties);
+
+      // Prevent accidental document window scroll offsets
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+
+      // Re-scroll active field if focused
+      if (lastFocusedInputRef.current && document.activeElement === lastFocusedInputRef.current) {
+        setTimeout(() => {
+          if (lastFocusedInputRef.current) {
+            scrollFocusedField(lastFocusedInputRef.current);
+          }
+        }, 50);
+      }
+    };
+
+    updateViewportPosition();
+
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', updateViewportPosition);
+      vv.addEventListener('scroll', updateViewportPosition);
+    }
+    window.addEventListener('resize', updateViewportPosition);
+
+    const handleWindowScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      if (vv) {
+        vv.removeEventListener('resize', updateViewportPosition);
+        vv.removeEventListener('scroll', updateViewportPosition);
+      }
+      window.removeEventListener('resize', updateViewportPosition);
+      window.removeEventListener('scroll', handleWindowScroll);
+      setModalViewportStyle({});
+
+      // Ensure any window scroll offset is cleanly cleared so no gap remains
+      if (typeof window !== 'undefined' && (window.scrollY !== 0 || window.scrollX !== 0)) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
+    };
+  }, [isAddModalOpen]);
+
+  const handleFormFocus = (e: React.FocusEvent) => {
+    const el = e.target as HTMLElement;
+    if (!el || !['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return;
+    lastFocusedInputRef.current = el;
+    setTimeout(() => {
+      if (modalRef.current && modalRef.current.contains(el)) {
+        const targetField = (el.closest('.form-group') as HTMLElement) || el;
+        targetField.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      if (window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+    }, 150);
+  };
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,8 +374,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
       {/* Create Task Modal */}
       {isAddModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsAddModalOpen(false)}>
-          <div className="task-add-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay task-modal-overlay" onClick={() => setIsAddModalOpen(false)}>
+          <div 
+            ref={modalRef} 
+            className="task-add-modal" 
+            style={modalViewportStyle}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="add-modal-header">
               <h2>New Actionable Task</h2>
               <button className="btn-icon" onClick={() => setIsAddModalOpen(false)}>
@@ -270,7 +388,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateTask} className="add-task-form">
+            <form onSubmit={handleCreateTask} className="add-task-form" onFocus={handleFormFocus}>
               <div className="form-group">
                 <label>Task Title</label>
                 <input 

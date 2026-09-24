@@ -302,11 +302,15 @@ export const App: React.FC = () => {
   const handleOpenNote = (id: string) => {
     setSelectedNoteId(id);
     handleSelectTab('note-editor');
+    api.recordKnowledgeView(id).catch(() => {});
+    setKnowledge(prev => prev.map(k => k.id === id ? { ...k, lastViewedAt: new Date().toISOString() } : k));
   };
 
   const handleOpenDoc = (id: string) => {
     setSelectedDocId(id);
     handleSelectTab('doc-viewer');
+    api.recordKnowledgeView(id).catch(() => {});
+    setKnowledge(prev => prev.map(k => k.id === id ? { ...k, lastViewedAt: new Date().toISOString() } : k));
   };
 
   const handleOpenProject = (id: string | null) => {
@@ -860,6 +864,9 @@ export const App: React.FC = () => {
         onOpenNote={handleOpenNote}
         onOpenDoc={handleOpenDoc}
         onOpenProject={handleOpenProject}
+        recentActivities={activities}
+        knowledge={knowledge}
+        tasks={tasks}
       />
 
       <AddBottomSheet

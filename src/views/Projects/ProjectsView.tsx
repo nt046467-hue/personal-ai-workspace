@@ -51,7 +51,12 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   // If a project is selected, render the dedicated Project Detail workspace
   if (selectedProject) {
     const projectTasks = tasks.filter(t => t.projectId === selectedProject.id || t.project.toLowerCase().includes(selectedProject.name.toLowerCase()));
-    const projectKnowledge = knowledge.slice(0, 3);
+    // Filter knowledge items that belong to this project (by project_id field)
+    const projectKnowledgeLinked = knowledge.filter(k => k.projectId === selectedProject.id);
+    // Fall back to recently updated items if project has no direct links
+    const projectKnowledge = projectKnowledgeLinked.length > 0
+      ? projectKnowledgeLinked.slice(0, 6)
+      : knowledge.slice(0, 3);
 
     return (
       <div className="project-detail-view">

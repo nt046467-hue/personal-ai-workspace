@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
   summary TEXT,
   pinned INTEGER DEFAULT 0 CHECK (pinned IN (0, 1)),
   metadata TEXT DEFAULT '{}',
+  last_viewed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -1610,11 +1611,13 @@ async function formatKnowledgeItem(row, db) {
     excerpt: row.excerpt ? String(row.excerpt) : "",
     tags: tags.length > 0 ? tags : metadata.tags || [],
     updatedAt: timeStr,
+    lastViewedAt: row.last_viewed_at ? String(row.last_viewed_at) : void 0,
     readTime: metadata.readTime || `${Math.max(1, Math.ceil((row.content?.length || 500) / 750))} min read`,
     pinned: Boolean(row.pinned),
     content: row.content ? String(row.content) : "",
     fileSize: metadata.fileSize,
-    pageCount: metadata.pageCount
+    pageCount: metadata.pageCount,
+    projectId: row.project_id ? String(row.project_id) : null
   };
 }
 router2.get("/", async (req, res) => {
@@ -1636,6 +1639,14 @@ router2.get("/", async (req, res) => {
   const formatted = await Promise.all(itemsRes.rows.map((item) => formatKnowledgeItem(item, db)));
   res.json({ success: true, data: formatted });
 });
+router2.patch("/:id/view", async (req, res) => {
+  const db = getDatabase();
+  await db.execute({
+    sql: "UPDATE knowledge_items SET last_viewed_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ?",
+    args: [req.params.id, req.user.workspaceId]
+  });
+  res.json({ success: true, message: "View recorded." });
+});
 router2.get("/:id", async (req, res) => {
   const db = getDatabase();
   const itemRes = await db.execute({
@@ -1649,6 +1660,11 @@ router2.get("/:id", async (req, res) => {
     });
     return;
   }
+  db.execute({
+    sql: "UPDATE knowledge_items SET last_viewed_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ?",
+    args: [req.params.id, req.user.workspaceId]
+  }).catch(() => {
+  });
   const formatted = await formatKnowledgeItem(itemRes.rows[0], db);
   res.json({ success: true, data: formatted });
 });
@@ -2752,33 +2768,78 @@ router6.get("/:id", async (req, res) => {
   const db = getDatabase();
   const docRes = await db.execute({
     sql: `
-      SELECT d.*, k.title, k.metadata
+      SELECT d.*, k.title as ki_title, k.metadata, k.content as ki_content, u.name as uploader_name, u.email as uploader_email
       FROM documents d
       LEFT JOIN knowledge_items k ON d.knowledge_item_id = k.id
+      LEFT JOIN users u ON d.user_id = u.id
       WHERE (d.id = ? OR d.knowledge_item_id = ?) AND d.workspace_id = ?
     `,
     args: [req.params.id, req.params.id, req.user.workspaceId]
   });
-  const doc = docRes.rows[0];
+  let doc = docRes.rows[0];
   if (!doc) {
+    const kiRes = await db.execute({
+      sql: `
+        SELECT k.*, u.name as uploader_name, u.email as uploader_email
+        FROM knowledge_items k
+        LEFT JOIN users u ON k.user_id = u.id
+        WHERE k.id = ? AND k.workspace_id = ?
+      `,
+      args: [req.params.id, req.user.workspaceId]
+    });
+    if (kiRes.rows.length > 0) {
+      const ki = kiRes.rows[0];
+      const meta = ki.metadata ? JSON.parse(String(ki.metadata)) : {};
+      res.json({
+        success: true,
+        data: {
+          id: String(ki.id),
+          knowledgeItemId: String(ki.id),
+          title: String(ki.title),
+          mimeType: "text/plain",
+          size: ki.content ? ki.content.length : 0,
+          pageCount: meta.pageCount || 1,
+          status: "ready",
+          summary: ki.excerpt ? String(ki.excerpt) : void 0,
+          extractedText: ki.content ? String(ki.content) : "",
+          author: ki.uploader_name || ki.uploader_email || void 0,
+          updatedAt: String(ki.updated_at)
+        }
+      });
+      return;
+    }
     res.status(404).json({
       success: false,
       error: { code: "NOT_FOUND", message: "Document not found or unauthorized." }
     });
     return;
   }
+  let fullText = doc.extracted_text ? String(doc.extracted_text) : "";
+  if (!fullText && doc.processing_status === "ready") {
+    const chunksRes = await db.execute({
+      sql: "SELECT content FROM document_chunks WHERE document_id = ? ORDER BY chunk_index ASC",
+      args: [doc.id]
+    });
+    if (chunksRes.rows.length > 0) {
+      fullText = chunksRes.rows.map((r) => String(r.content)).join("\n\n");
+    } else if (doc.ki_content) {
+      fullText = String(doc.ki_content);
+    }
+  }
   res.json({
     success: true,
     data: {
       id: String(doc.id),
       knowledgeItemId: doc.knowledge_item_id ? String(doc.knowledge_item_id) : void 0,
-      title: String(doc.original_name || doc.title),
+      title: String(doc.original_name || doc.ki_title || "Document"),
       mimeType: String(doc.mime_type),
       size: Number(doc.size),
       pageCount: Number(doc.page_count || 1),
       status: String(doc.processing_status),
       summary: doc.summary ? String(doc.summary) : void 0,
-      extractedText: doc.extracted_text ? String(doc.extracted_text) : void 0,
+      extractedText: fullText || void 0,
+      errorMessage: doc.error_message ? String(doc.error_message) : void 0,
+      author: doc.uploader_name || doc.uploader_email || void 0,
       updatedAt: String(doc.updated_at)
     }
   });

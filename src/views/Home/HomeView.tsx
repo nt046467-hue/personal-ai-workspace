@@ -10,7 +10,9 @@ import {
   FolderKanban, 
   CheckSquare,
   Plus,
-  X
+  X,
+  BookOpen,
+  Code2
 } from 'lucide-react';
 import type { Task, KnowledgeItem, Project, Activity } from '../../data/mockData';
 import { CURRENT_USER } from '../../data/mockData';
@@ -50,9 +52,32 @@ export const HomeView: React.FC<HomeViewProps> = ({
 }) => {
   const pendingTasks = tasks.filter(t => !t.completed);
   const todayTasks = pendingTasks.filter(t => t.dueCategory === 'today');
-  const recentDocs = knowledge.slice(0, 3);
+  
+  // R-2 & R-3: Sort genuinely by last_viewed_at, falling back to updated_at
+  const recentDocs = [...knowledge]
+    .sort((a, b) => {
+      const timeA = a.lastViewedAt ? new Date(a.lastViewedAt).getTime() : 0;
+      const timeB = b.lastViewedAt ? new Date(b.lastViewedAt).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      const updatedA = new Date(a.updatedAt).getTime() || 0;
+      const updatedB = new Date(b.updatedAt).getTime() || 0;
+      return updatedB - updatedA;
+    })
+    .slice(0, 3);
+
   const activeProjects = projects.slice(0, 3);
   const displayName = (user?.name || CURRENT_USER.name).split(' ')[0];
+
+  const getItemIcon = (type: string) => {
+    switch (type) {
+      case 'code': return <Code2 size={17} />;
+      case 'research': return <BookOpen size={17} />;
+      case 'document':
+      case 'note':
+      default:
+        return <FileText size={17} />;
+    }
+  };
 
   return (
     <div className="home-view-container">
@@ -130,11 +155,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </section>
 
-          {/* Right Column: Continue Working */}
-          <section className="dashboard-section card" aria-label="Continue Working">
+          {/* Right Column: Continue Reading */}
+          <section className="dashboard-section card" aria-label="Continue Reading">
             <div className="section-header">
               <div className="section-title-group">
-                <h2 className="section-heading">Continue Working</h2>
+                <h2 className="section-heading">Continue Reading</h2>
                 <span className="badge badge-default">Recent</span>
               </div>
               <button className="section-action-link" onClick={() => onNavigate('knowledge')}>
@@ -150,11 +175,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   onClick={() => item.type === 'document' ? onOpenDoc(item.id) : onOpenNote(item.id)}
                 >
                   <div className="doc-icon-box">
-                    <FileText size={17} />
+                    {getItemIcon(item.type)}
                   </div>
                   <div className="doc-card-info">
                     <span className="doc-card-title">{item.title}</span>
-                    <span className="doc-card-sub">{item.type} · {item.tags.join(', ')} • {formatTimeAgo(item.updatedAt)}</span>
+                    <span className="doc-card-sub">
+                      <span className="doc-type-chip">{item.type}</span>
+                      {item.tags.length > 0 && ` · ${item.tags.join(', ')}`}
+                      {` • ${formatTimeAgo(item.lastViewedAt || item.updatedAt)}`}
+                    </span>
                   </div>
                   <ChevronRight size={14} className="doc-card-arrow" />
                 </div>
@@ -335,10 +364,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 onClick={() => doc.type === 'document' ? onOpenDoc(doc.id) : onOpenNote(doc.id)}
               >
                 <div className="scroll-card-icon">
-                  <FileText size={18} />
+                  {getItemIcon(doc.type)}
                 </div>
                 <span className="scroll-card-title">{doc.title}</span>
-                <span className="scroll-card-meta">{formatTimeAgo(doc.updatedAt)}</span>
+                <span className="scroll-card-meta">
+                  <span className="doc-type-chip">{doc.type}</span> {formatTimeAgo(doc.lastViewedAt || doc.updatedAt)}
+                </span>
               </div>
             ))}
           </div>

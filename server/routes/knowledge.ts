@@ -34,11 +34,13 @@ async function formatKnowledgeItem(row: any, db: any): Promise<any> {
     excerpt: row.excerpt ? String(row.excerpt) : '',
     tags: tags.length > 0 ? tags : (metadata.tags || []),
     updatedAt: timeStr,
+    lastViewedAt: row.last_viewed_at ? String(row.last_viewed_at) : undefined,
     readTime: metadata.readTime || `${Math.max(1, Math.ceil((row.content?.length || 500) / 750))} min read`,
     pinned: Boolean(row.pinned),
     content: row.content ? String(row.content) : '',
     fileSize: metadata.fileSize,
     pageCount: metadata.pageCount,
+    projectId: row.project_id ? String(row.project_id) : null,
   };
 }
 
@@ -69,6 +71,16 @@ router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> 
   res.json({ success: true, data: formatted });
 });
 
+// PATCH /api/knowledge/:id/view (Record item view for Continue Reading)
+router.patch('/:id/view', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const db = getDatabase();
+  await db.execute({
+    sql: 'UPDATE knowledge_items SET last_viewed_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  });
+  res.json({ success: true, message: 'View recorded.' });
+});
+
 // GET /api/knowledge/:id
 router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const db = getDatabase();
@@ -84,6 +96,12 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<voi
     });
     return;
   }
+
+  // Update last_viewed_at
+  db.execute({
+    sql: 'UPDATE knowledge_items SET last_viewed_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_id = ?',
+    args: [req.params.id, req.user!.workspaceId],
+  }).catch(() => {});
 
   const formatted = await formatKnowledgeItem(itemRes.rows[0], db);
   res.json({ success: true, data: formatted });

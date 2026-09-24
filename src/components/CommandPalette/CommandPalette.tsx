@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Search, 
-  FileText, 
-  CheckSquare, 
-  FolderKanban, 
-  Bot,
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  Search,
+  FileText,
+  CheckSquare,
+  FolderKanban,
   BrainCircuit,
-  Clock, 
-  ArrowRight, 
+  Clock,
+  ArrowRight,
   X,
   Bookmark
 } from 'lucide-react';
@@ -15,6 +14,7 @@ import { api } from '../../services/api';
 import { HighlightText } from '../HighlightText/HighlightText';
 import { openSafeExternalUrl } from '../../utils/security';
 import type { NavigationTab } from '../AppShell/DesktopSidebar';
+import type { Activity, KnowledgeItem, Task } from '../../data/mockData';
 import './CommandPalette.css';
 
 interface CommandPaletteProps {
@@ -24,6 +24,9 @@ interface CommandPaletteProps {
   onOpenNote?: (id: string) => void;
   onOpenDoc?: (id: string) => void;
   onOpenProject?: (id: string) => void;
+  recentActivities?: Activity[];
+  knowledge?: KnowledgeItem[];
+  tasks?: Task[];
 }
 
 export interface RecentSearchItem {
@@ -38,39 +41,76 @@ export interface RecentSearchItem {
 
 const RECENT_SEARCHES_STORAGE_KEY = 'myspace_recent_searches';
 
-const DEFAULT_RECENT_SEARCHES: RecentSearchItem[] = [
-  {
-    id: 'recent-1',
-    type: 'note',
-    title: 'Firebase Security Architecture & Multi-Tenant Rules',
-    subtitle: 'Notes • Multi-tenant verified',
-    targetId: 'k-1',
-    timestamp: Date.now() - 3600000,
-  },
-  {
-    id: 'recent-2',
-    type: 'document',
-    title: 'Distributed Event-Driven Architecture Spec.pdf',
-    subtitle: 'Document • 18 pages • p95 SLA',
-    targetId: 'k-2',
-    timestamp: Date.now() - 7200000,
-  },
-];
+const DUMMY_SEARCH_TITLES = new Set([
+  'firebase security architecture & multi-tenant rules',
+  'distributed event-driven architecture spec.pdf',
+]);
+
+function sanitizeRecentSearches(items: RecentSearchItem[]): RecentSearchItem[] {
+  if (!Array.isArray(items)) return [];
+  const seenTitles = new Set<string>();
+  const seenTargets = new Set<string>();
+  const deduped: RecentSearchItem[] = [];
+
+  for (const item of items) {
+    if (!item || typeof item.title !== 'string') continue;
+    const cleanTitle = item.title.trim();
+    if (!cleanTitle) continue;
+    const titleKey = cleanTitle.toLowerCase();
+
+    // Strip out dummy / mock placeholder items
+    if (DUMMY_SEARCH_TITLES.has(titleKey) || item.id === 'recent-1' || item.id === 'recent-2') {
+      continue;
+    }
+
+    // Deduplicate by targetId if present
+    if (item.targetId && seenTargets.has(item.targetId)) {
+      continue;
+    }
+
+    // Deduplicate by normalized title
+    if (seenTitles.has(titleKey)) {
+      continue;
+    }
+
+    seenTitles.add(titleKey);
+    if (item.targetId) {
+      seenTargets.add(item.targetId);
+    }
+
+    deduped.push({
+      ...item,
+      title: cleanTitle,
+      subtitle: item.subtitle ? item.subtitle.trim() : undefined,
+    });
+  }
+
+  return deduped.slice(0, 8);
+}
 
 function loadRecentSearches(): RecentSearchItem[] {
   try {
     const raw = localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
-    if (!raw) return DEFAULT_RECENT_SEARCHES;
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [];
+    }
+    const sanitized = sanitizeRecentSearches(parsed);
+    // If dummy items or duplicates existed in localStorage, immediately overwrite with sanitized
+    if (sanitized.length !== parsed.length) {
+      persistRecentSearches(sanitized);
+    }
+    return sanitized;
   } catch {
-    return DEFAULT_RECENT_SEARCHES;
+    return [];
   }
 }
 
 function persistRecentSearches(items: RecentSearchItem[]) {
   try {
-    localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(items.slice(0, 8)));
+    const sanitized = sanitizeRecentSearches(items);
+    localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(sanitized));
   } catch (err) {
     console.warn('[Search] Failed to persist recent searches:', err);
   }
@@ -83,6 +123,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onOpenNote,
   onOpenDoc,
   onOpenProject,
+  recentActivities = [],
+  knowledge = [],
+  tasks = [],
 }) => {
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -140,12 +183,31 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   }, [query]);
 
   const recordRecentItem = useCallback((entry: Omit<RecentSearchItem, 'timestamp'>) => {
+    const cleanTitle = (entry.title || '').trim();
+    if (!cleanTitle) return;
+
     setRecentSearches((prev) => {
+      const lowerNewTitle = cleanTitle.toLowerCase();
+      // Remove any item that matches either the same normalized title OR the same targetId
       const filtered = prev.filter((item) => {
-        if (entry.targetId && item.targetId) return item.targetId !== entry.targetId;
-        return item.title.toLowerCase() !== entry.title.toLowerCase();
+        if (!item || !item.title) return false;
+        if (entry.targetId && item.targetId && entry.targetId === item.targetId) {
+          return false;
+        }
+        if (item.title.trim().toLowerCase() === lowerNewTitle) {
+          return false;
+        }
+        return true;
       });
-      const updated = [{ ...entry, timestamp: Date.now() }, ...filtered].slice(0, 8);
+
+      const updatedItem: RecentSearchItem = {
+        ...entry,
+        title: cleanTitle,
+        subtitle: entry.subtitle?.trim(),
+        timestamp: Date.now(),
+      };
+
+      const updated = sanitizeRecentSearches([updatedItem, ...filtered]);
       persistRecentSearches(updated);
       return updated;
     });
@@ -156,15 +218,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     setRecentSearches([]);
     try {
       localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify([]));
-    } catch {}
+    } catch { }
   };
 
   const handleRemoveRecentSearch = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setRecentSearches((prev) => {
-      const updated = prev.filter((item) => item.id !== id);
-      persistRecentSearches(updated);
-      return updated;
+      const targetItem = prev.find(item => item.id === id);
+      const targetTitle = targetItem?.title?.trim().toLowerCase();
+      const updated = prev.filter((item) => {
+        if (item.id === id) return false;
+        if (targetTitle && item.title.trim().toLowerCase() === targetTitle) return false;
+        return true;
+      });
+      const sanitized = sanitizeRecentSearches(updated);
+      persistRecentSearches(sanitized);
+      return sanitized;
     });
   };
 
@@ -193,12 +262,102 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   if (!isOpen) return null;
 
-  const defaultSuggested = [
-    { id: 'act-1', title: 'Ask AI: Summarize my recent work', icon: <Bot size={16} />, action: () => { onNavigate('ai'); onClose(); } },
-    { id: 'act-2', title: 'Open Firebase Security Rules', icon: <FileText size={16} />, action: () => { if (onOpenNote) onOpenNote('k-1'); else onNavigate('note-editor'); onClose(); } },
-    { id: 'act-3', title: 'View Architecture Spec.pdf', icon: <FileText size={16} />, action: () => { if (onOpenDoc) onOpenDoc('k-2'); else onNavigate('doc-viewer'); onClose(); } },
-    { id: 'act-4', title: 'Filter Today’s Unfinished Tasks', icon: <CheckSquare size={16} />, action: () => { onNavigate('tasks'); onClose(); } },
-  ];
+  const suggestedItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      title: string;
+      type: 'note' | 'document' | 'task' | 'project' | 'bookmark';
+      subtitle?: string;
+      targetId?: string;
+      action: () => void;
+    }> = [];
+
+    // Try real activities first
+    if (recentActivities && recentActivities.length > 0) {
+      for (const act of recentActivities) {
+        if (items.length >= 4) break;
+        const targetId = act.targetId;
+        if (act.type === 'document' && targetId) {
+          items.push({
+            id: act.id,
+            title: act.detail || act.title,
+            type: 'document',
+            subtitle: act.title,
+            targetId,
+            action: () => { if (onOpenDoc) onOpenDoc(targetId); else onNavigate('doc-viewer'); onClose(); },
+          });
+        } else if (act.type === 'note' && targetId) {
+          items.push({
+            id: act.id,
+            title: act.detail || act.title,
+            type: 'note',
+            subtitle: act.title,
+            targetId,
+            action: () => { if (onOpenNote) onOpenNote(targetId); else onNavigate('note-editor'); onClose(); },
+          });
+        } else if (act.type === 'task') {
+          items.push({
+            id: act.id,
+            title: act.detail || act.title,
+            type: 'task',
+            subtitle: 'Task',
+            targetId,
+            action: () => { onNavigate('tasks'); onClose(); },
+          });
+        } else if (act.type === 'project' && targetId) {
+          items.push({
+            id: act.id,
+            title: act.detail || act.title,
+            type: 'project',
+            subtitle: 'Project',
+            targetId,
+            action: () => { if (onOpenProject) onOpenProject(targetId); else onNavigate('projects'); onClose(); },
+          });
+        }
+      }
+    }
+
+    // Fill with real knowledge items
+    if (items.length < 4 && knowledge && knowledge.length > 0) {
+      for (const k of knowledge) {
+        if (items.length >= 4) break;
+        if (items.some(i => i.targetId === k.id)) continue;
+        items.push({
+          id: `k-${k.id}`,
+          title: k.title,
+          type: k.type === 'document' ? 'document' : 'note',
+          subtitle: k.excerpt || (k.type === 'document' ? 'Document' : 'Note'),
+          targetId: k.id,
+          action: () => {
+            if (k.type === 'document') {
+              if (onOpenDoc) onOpenDoc(k.id); else onNavigate('doc-viewer');
+            } else {
+              if (onOpenNote) onOpenNote(k.id); else onNavigate('note-editor');
+            }
+            onClose();
+          },
+        });
+      }
+    }
+
+    // Fill with real tasks
+    if (items.length < 4 && tasks && tasks.length > 0) {
+      for (const t of tasks) {
+        if (items.length >= 4) break;
+        if (items.some(i => i.targetId === t.id)) continue;
+        items.push({
+          id: `t-${t.id}`,
+          title: t.title,
+          type: 'task',
+          subtitle: t.project || 'Task',
+          targetId: t.id,
+          action: () => { onNavigate('tasks'); onClose(); },
+        });
+      }
+    }
+
+    return items;
+  }, [recentActivities, knowledge, tasks, onOpenDoc, onOpenNote, onOpenProject, onNavigate, onClose]);
 
   const knowledgeResults = searchResults.filter(r => r.type === 'note' || r.type === 'document');
   const taskResults = searchResults.filter(r => r.type === 'task');
@@ -220,8 +379,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div 
-        className="command-palette-modal" 
+      <div
+        className="command-palette-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -255,9 +414,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           />
           <div className="command-search-actions">
             {query && (
-              <button 
+              <button
                 type="button"
-                className="command-clear-btn" 
+                className="command-clear-btn"
                 onClick={() => {
                   setQuery('');
                   inputRef.current?.focus();
@@ -292,9 +451,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     </button>
                   </div>
                   {recentSearches.map((item) => (
-                    <div 
-                      key={item.id} 
-                      className="command-item" 
+                    <div
+                      key={item.id}
+                      className="command-item"
                       onClick={() => handleSelectRecentSearch(item)}
                     >
                       {getRecentIcon(item.type)}
@@ -317,18 +476,43 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 </div>
               )}
 
-              <div className="command-section">
-                <span className="command-section-title">Suggested Actions</span>
-                {defaultSuggested.map((item) => (
-                  <div key={item.id} className="command-item" onClick={item.action}>
-                    <div className="item-icon action-icon">{item.icon}</div>
-                    <div className="item-content">
-                      <span className="item-title">{item.title}</span>
+              {suggestedItems.length > 0 && (
+                <div className="command-section">
+                  <span className="command-section-title">Recent Workspace Items</span>
+                  {suggestedItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="command-item"
+                      onClick={() => {
+                        recordRecentItem({
+                          id: item.id,
+                          type: item.type,
+                          title: item.title,
+                          subtitle: item.subtitle,
+                          targetId: item.targetId,
+                        });
+                        item.action();
+                      }}
+                    >
+                      {getRecentIcon(item.type)}
+                      <div className="item-content">
+                        <span className="item-title">{item.title}</span>
+                        {item.subtitle && <span className="item-subtitle">{item.subtitle}</span>}
+                      </div>
+                      <span className="item-badge">{item.type}</span>
+                      <ArrowRight size={14} className="item-arrow" />
                     </div>
-                    <ArrowRight size={14} className="item-arrow" />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+
+              {recentSearches.length === 0 && suggestedItems.length === 0 && (
+                <div className="command-empty-state">
+                  <Search size={28} className="empty-icon" />
+                  <p className="empty-text">Start typing to search your workspace</p>
+                  <span className="empty-sub">Search notes, documents, tasks, and projects</span>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -349,8 +533,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     <div className="command-section">
                       <span className="command-section-title">Knowledge & Documents</span>
                       {knowledgeResults.map((item) => (
-                        <div 
-                          key={item.id} 
+                        <div
+                          key={item.id}
                           className="command-item"
                           onClick={() => {
                             recordRecentItem({
@@ -389,8 +573,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     <div className="command-section">
                       <span className="command-section-title">Tasks</span>
                       {taskResults.map((t) => (
-                        <div 
-                          key={t.id} 
+                        <div
+                          key={t.id}
                           className="command-item"
                           onClick={() => {
                             recordRecentItem({
@@ -425,8 +609,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     <div className="command-section">
                       <span className="command-section-title">Projects</span>
                       {projectResults.map((p) => (
-                        <div 
-                          key={p.id} 
+                        <div
+                          key={p.id}
                           className="command-item"
                           onClick={() => {
                             recordRecentItem({
@@ -460,8 +644,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     <div className="command-section">
                       <span className="command-section-title">Bookmarks</span>
                       {bookmarkResults.map((b) => (
-                        <div 
-                          key={b.id} 
+                        <div
+                          key={b.id}
                           className="command-item"
                           onClick={() => {
                             recordRecentItem({

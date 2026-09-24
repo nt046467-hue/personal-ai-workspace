@@ -8,7 +8,9 @@ import {
   Copy,
   ExternalLink,
   Mail,
-  X
+  X,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import type { KnowledgeItem } from '../../data/mockData';
 import { api } from '../../services/api';
@@ -29,6 +31,45 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
   const [mobileAISheetOpen, setMobileAISheetOpen] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
+
+  // Real document content & status state
+  const [docDetail, setDocDetail] = useState<{
+    title?: string;
+    extractedText?: string;
+    status?: string;
+    author?: string;
+    pageCount?: number;
+    errorMessage?: string;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isCancelled = false;
+    setIsLoading(true);
+
+    api.getDocumentStatus(document.id)
+      .then((data) => {
+        if (isCancelled) return;
+        setDocDetail(data);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        // Fallback to item content if present
+        setDocDetail({
+          title: document.title,
+          extractedText: document.content || '',
+          status: document.content ? 'ready' : 'failed',
+          pageCount: document.pageCount || 1,
+          errorMessage: 'Could not load document text from server.',
+        });
+        setIsLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [document.id, document.title, document.content, document.pageCount]);
 
   // Close share menu on outside click or ESC
   useEffect(() => {
@@ -152,7 +193,10 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
         <div className="doc-top-actions">
           <button 
             className="btn btn-secondary btn-sm"
-            onClick={() => showToast('Downloading document...')}
+            onClick={() => {
+              window.open(`/api/documents/${document.id}/download`, '_blank');
+              showToast('Starting document download…');
+            }}
           >
             <Download size={14} />
             <span className="hide-mobile">Export</span>
@@ -233,42 +277,48 @@ export const DocumentViewerView: React.FC<DocumentViewerViewProps> = ({
         <div className="doc-preview-pane">
           <div className="doc-page-canvas">
             <div className="doc-page-header">
-              <span className="doc-page-badge">PAGE 1 OF {document.pageCount || 18}</span>
-              <span className="doc-page-status">Confidential • Internal Working Spec</span>
+              <span className="doc-page-badge">
+                PAGE 1 OF {docDetail?.pageCount || document.pageCount || 1}
+              </span>
+              {docDetail?.author ? (
+                <span className="doc-page-status">Uploaded by {docDetail.author}</span>
+              ) : (
+                <span className="doc-page-status">Workspace Document</span>
+              )}
             </div>
 
-            <article className="doc-page-body">
-              <h1 className="doc-spec-heading">{document.title.replace('.pdf', '')}</h1>
-              <p className="doc-spec-meta">Author: Nabin Thapa • Systems Architecture Group</p>
-
-              <div className="doc-spec-section">
-                <h3>1. Executive Architecture Scope</h3>
-                <p>
-                  This specification governs the message propagation protocol for distributed tenant operations.
-                  Client mutations generate signed idempotency envelopes routed to distributed partition queues.
-                </p>
-                <div className="doc-callout-box">
-                  <strong>Critical Invariant:</strong> Events must guarantee exactly-once delivery semantics at the application layer through deduplication caches.
+            {isLoading ? (
+              <div className="doc-viewer-state-box">
+                <div className="doc-loading-spinner" />
+                <p>Loading document text…</p>
+              </div>
+            ) : docDetail?.status === 'processing' || docDetail?.status === 'pending' ? (
+              <div className="doc-viewer-state-box">
+                <Clock size={28} className="doc-state-icon accent-glyph" />
+                <h3 className="doc-state-title">Still processing document…</h3>
+                <p className="doc-state-desc">Text extraction is currently running in the background. Check back in a moment.</p>
+              </div>
+            ) : docDetail?.status === 'failed' ? (
+              <div className="doc-viewer-state-box is-error">
+                <AlertCircle size={28} className="doc-state-icon" />
+                <h3 className="doc-state-title">Couldn't extract text from this file</h3>
+                <p className="doc-state-desc">{docDetail.errorMessage || 'Text extraction was unable to parse this document.'}</p>
+              </div>
+            ) : (
+              <article className="doc-page-body">
+                <h1 className="doc-spec-heading">{(docDetail?.title || document.title).replace(/\.[^/.]+$/, '')}</h1>
+                {docDetail?.author && (
+                  <p className="doc-spec-meta">Uploaded by {docDetail.author}</p>
+                )}
+                <div className="doc-extracted-content">
+                  {docDetail?.extractedText ? (
+                    <Markdown content={docDetail.extractedText} />
+                  ) : (
+                    <p className="doc-empty-text">No extracted text content available for this document.</p>
+                  )}
                 </div>
-              </div>
-
-              <div className="doc-spec-section">
-                <h3>2. Performance SLAs & Ingestion</h3>
-                <ul>
-                  <li><strong>p95 Message Delivery Latency:</strong> &lt; 45ms under 5,000 req/sec</li>
-                  <li><strong>Dead Letter Quarantine:</strong> 5 max retries before operator alert</li>
-                  <li><strong>Partition Key Isolation:</strong> Tenant UUID hash mod partition count</li>
-                </ul>
-              </div>
-
-              <div className="doc-spec-section">
-                <h3>3. Security Isolation Protocol</h3>
-                <p>
-                  Zero tenant mutation payloads may bypass cryptographic signature verification.
-                  Tokens expired over 3600 seconds are rejected at the edge gateway.
-                </p>
-              </div>
-            </article>
+              </article>
+            )}
           </div>
         </div>
 

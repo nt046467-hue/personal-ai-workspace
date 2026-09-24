@@ -179,16 +179,49 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<voi
   const db = getDatabase();
   const docRes = await db.execute({
     sql: `
-      SELECT d.*, k.title, k.metadata
+      SELECT d.*, k.title as ki_title, k.metadata, k.content as ki_content, u.name as uploader_name, u.email as uploader_email
       FROM documents d
       LEFT JOIN knowledge_items k ON d.knowledge_item_id = k.id
+      LEFT JOIN users u ON d.user_id = u.id
       WHERE (d.id = ? OR d.knowledge_item_id = ?) AND d.workspace_id = ?
     `,
     args: [req.params.id, req.params.id, req.user!.workspaceId],
   });
-  const doc = docRes.rows[0] as any;
+  let doc = docRes.rows[0] as any;
 
   if (!doc) {
+    // Check if the id is a knowledge item of type document
+    const kiRes = await db.execute({
+      sql: `
+        SELECT k.*, u.name as uploader_name, u.email as uploader_email
+        FROM knowledge_items k
+        LEFT JOIN users u ON k.user_id = u.id
+        WHERE k.id = ? AND k.workspace_id = ?
+      `,
+      args: [req.params.id, req.user!.workspaceId],
+    });
+    if (kiRes.rows.length > 0) {
+      const ki = kiRes.rows[0] as any;
+      const meta = ki.metadata ? JSON.parse(String(ki.metadata)) : {};
+      res.json({
+        success: true,
+        data: {
+          id: String(ki.id),
+          knowledgeItemId: String(ki.id),
+          title: String(ki.title),
+          mimeType: 'text/plain',
+          size: ki.content ? ki.content.length : 0,
+          pageCount: meta.pageCount || 1,
+          status: 'ready',
+          summary: ki.excerpt ? String(ki.excerpt) : undefined,
+          extractedText: ki.content ? String(ki.content) : '',
+          author: ki.uploader_name || ki.uploader_email || undefined,
+          updatedAt: String(ki.updated_at),
+        },
+      });
+      return;
+    }
+
     res.status(404).json({
       success: false,
       error: { code: 'NOT_FOUND', message: 'Document not found or unauthorized.' },
@@ -196,18 +229,34 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<voi
     return;
   }
 
+  let fullText = doc.extracted_text ? String(doc.extracted_text) : '';
+  if (!fullText && doc.processing_status === 'ready') {
+    // Reconstruct from document_chunks ordered by chunk_index
+    const chunksRes = await db.execute({
+      sql: 'SELECT content FROM document_chunks WHERE document_id = ? ORDER BY chunk_index ASC',
+      args: [doc.id],
+    });
+    if (chunksRes.rows.length > 0) {
+      fullText = chunksRes.rows.map((r: any) => String(r.content)).join('\n\n');
+    } else if (doc.ki_content) {
+      fullText = String(doc.ki_content);
+    }
+  }
+
   res.json({
     success: true,
     data: {
       id: String(doc.id),
       knowledgeItemId: doc.knowledge_item_id ? String(doc.knowledge_item_id) : undefined,
-      title: String(doc.original_name || doc.title),
+      title: String(doc.original_name || doc.ki_title || 'Document'),
       mimeType: String(doc.mime_type),
       size: Number(doc.size),
       pageCount: Number(doc.page_count || 1),
       status: String(doc.processing_status),
       summary: doc.summary ? String(doc.summary) : undefined,
-      extractedText: doc.extracted_text ? String(doc.extracted_text) : undefined,
+      extractedText: fullText || undefined,
+      errorMessage: doc.error_message ? String(doc.error_message) : undefined,
+      author: doc.uploader_name || doc.uploader_email || undefined,
       updatedAt: String(doc.updated_at),
     },
   });

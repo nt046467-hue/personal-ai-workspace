@@ -505,15 +505,24 @@
     box-sizing: border-box;
   }
 
+  .task-modal-overlay {
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+
   .task-add-modal {
     position: fixed;
-    bottom: 0;
+    bottom: var(--task-modal-bottom, 0px);
     left: 0;
     right: 0;
     max-width: 100%;
+    max-height: var(--task-modal-max-height, calc(100dvh - 24px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
     animation: slideUp var(--duration-normal) var(--ease-standard);
-    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0));
+    padding-bottom: var(--task-modal-padding-bottom, calc(var(--space-6) + env(safe-area-inset-bottom, 0)));
     box-sizing: border-box;
   }
 
