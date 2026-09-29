@@ -260,9 +260,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   const suggestedItems = useMemo(() => {
+    if (!isOpen) return [];
     const items: Array<{
       id: string;
       title: string;
@@ -357,7 +356,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }
 
     return items;
-  }, [recentActivities, knowledge, tasks, onOpenDoc, onOpenNote, onOpenProject, onNavigate, onClose]);
+  }, [isOpen, recentActivities, knowledge, tasks, onOpenDoc, onOpenNote, onOpenProject, onNavigate, onClose]);
+
+  if (!isOpen) return null;
 
   const knowledgeResults = searchResults.filter(r => r.type === 'note' || r.type === 'document');
   const taskResults = searchResults.filter(r => r.type === 'task');

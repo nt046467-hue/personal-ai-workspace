@@ -15,6 +15,7 @@ import conversationsRouter from './routes/conversations';
 import aiRouter from './routes/ai';
 import activitiesRouter from './routes/activities';
 import settingsRouter from './routes/settings';
+import paymentsRouter from './routes/payments';
 import { csrfProtection } from './middleware/csrf';
 
 export function createApp(): express.Application {
@@ -110,6 +111,7 @@ export function createApp(): express.Application {
   app.use(['/api/ai', '/ai'], aiRouter);
   app.use(['/api/activities', '/activities'], activitiesRouter);
   app.use(['/api/settings', '/settings'], settingsRouter);
+  app.use(['/api/payments', '/payments'], paymentsRouter);
 
   // Global error handler — never leak internal details in production
   app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {

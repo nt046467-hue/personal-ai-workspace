@@ -24,6 +24,7 @@ export interface ServerConfig {
   seedDemo: boolean;
   resendApiKey?: string;
   emailFrom: string;
+  adminPassword?: string;
 }
 
 const env = (process.env.NODE_ENV as ServerConfig['env']) || 'development';
@@ -71,4 +72,5 @@ export const config: ServerConfig = {
   seedDemo: process.env.SEED_DEMO === 'true',
   resendApiKey: process.env.RESEND_API_KEY || undefined,
   emailFrom: process.env.EMAIL_FROM || 'MySpace AI <onboarding@resend.dev>',
+  adminPassword: process.env.ADMIN_PASSWORD || undefined,
 };
